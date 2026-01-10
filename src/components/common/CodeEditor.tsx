@@ -1,15 +1,16 @@
 import { useEffect, useRef, useCallback } from "react";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
+import { syntaxHighlighting, bracketMatching, HighlightStyle } from "@codemirror/language";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { java } from "@codemirror/lang-java";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { tags } from "@lezer/highlight";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 interface CodeEditorProps {
   value: string;
@@ -27,6 +28,77 @@ const languageExtensions: Record<string, () => ReturnType<typeof html>> = {
   rust: rust,
   java: java,
 };
+
+// Compartments for dynamic switching
+const themeCompartment = new Compartment();
+const editorStyleCompartment = new Compartment();
+
+// Create dynamic editor styles based on settings
+function createEditorStyles(fontFamily: string, fontSize: number) {
+  return EditorView.theme({
+    "&": {
+      fontSize: `${fontSize}px`,
+    },
+    ".cm-content": {
+      fontFamily: `"${fontFamily}", var(--font-mono)`,
+      fontSize: `${fontSize}px`,
+    },
+    ".cm-scroller": {
+      fontFamily: `"${fontFamily}", var(--font-mono)`,
+      lineHeight: "1.6",
+    },
+    ".cm-gutters": {
+      fontSize: `${fontSize}px`,
+    },
+    ".cm-lineNumbers .cm-gutterElement": {
+      fontSize: `${fontSize}px`,
+    },
+  });
+}
+
+// Catppuccin Latte (light) syntax highlighting
+const catppuccinLatteHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "#8839ef" },
+  { tag: tags.comment, color: "#9ca0b0", fontStyle: "italic" },
+  { tag: tags.string, color: "#40a02b" },
+  { tag: tags.number, color: "#fe640b" },
+  { tag: tags.bool, color: "#fe640b" },
+  { tag: tags.null, color: "#fe640b" },
+  { tag: tags.className, color: "#df8e1d" },
+  { tag: tags.function(tags.variableName), color: "#1e66f5" },
+  { tag: tags.propertyName, color: "#1e66f5" },
+  { tag: tags.operator, color: "#04a5e5" },
+  { tag: tags.punctuation, color: "#6c6f85" },
+  { tag: tags.typeName, color: "#df8e1d" },
+  { tag: tags.tagName, color: "#d20f39" },
+  { tag: tags.attributeName, color: "#df8e1d" },
+  { tag: tags.attributeValue, color: "#40a02b" },
+  { tag: tags.variableName, color: "#4c4f69" },
+  { tag: tags.definition(tags.variableName), color: "#1e66f5" },
+  { tag: tags.self, color: "#d20f39" },
+]);
+
+// Catppuccin Mocha (dark) syntax highlighting
+const catppuccinMochaHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "#cba6f7" },
+  { tag: tags.comment, color: "#6c7086", fontStyle: "italic" },
+  { tag: tags.string, color: "#a6e3a1" },
+  { tag: tags.number, color: "#fab387" },
+  { tag: tags.bool, color: "#fab387" },
+  { tag: tags.null, color: "#fab387" },
+  { tag: tags.className, color: "#f9e2af" },
+  { tag: tags.function(tags.variableName), color: "#89b4fa" },
+  { tag: tags.propertyName, color: "#89b4fa" },
+  { tag: tags.operator, color: "#89dceb" },
+  { tag: tags.punctuation, color: "#a6adc8" },
+  { tag: tags.typeName, color: "#f9e2af" },
+  { tag: tags.tagName, color: "#f38ba8" },
+  { tag: tags.attributeName, color: "#f9e2af" },
+  { tag: tags.attributeValue, color: "#a6e3a1" },
+  { tag: tags.variableName, color: "#cdd6f4" },
+  { tag: tags.definition(tags.variableName), color: "#89b4fa" },
+  { tag: tags.self, color: "#f38ba8" },
+]);
 
 // Custom Catppuccin-inspired theme
 const catppuccinTheme = EditorView.theme({
@@ -85,13 +157,17 @@ const catppuccinTheme = EditorView.theme({
   },
 });
 
-// Catppuccin syntax highlighting
-const catppuccinHighlight = syntaxHighlighting(defaultHighlightStyle);
+// Get syntax highlighting based on theme
+function getSyntaxHighlighting(isDark: boolean) {
+  return syntaxHighlighting(isDark ? catppuccinMochaHighlight : catppuccinLatteHighlight);
+}
 
 export function CodeEditor({ value, language, onChange, readOnly = false }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const editorSettings = useSettingsStore((state) => state.editorSettings);
 
   // Keep onChange ref updated
   onChangeRef.current = onChange;
@@ -110,6 +186,9 @@ export function CodeEditor({ value, language, onChange, readOnly = false }: Code
       }
     });
 
+    const isDark = resolvedTheme === "dark";
+    const { fontFamily, fontSize } = editorSettings;
+
     const state = EditorState.create({
       doc: value,
       extensions: [
@@ -121,8 +200,8 @@ export function CodeEditor({ value, language, onChange, readOnly = false }: Code
         keymap.of([...defaultKeymap, ...historyKeymap]),
         getLanguageExtension(),
         catppuccinTheme,
-        catppuccinHighlight,
-        oneDark,
+        editorStyleCompartment.of(createEditorStyles(fontFamily, fontSize)),
+        themeCompartment.of(getSyntaxHighlighting(isDark)),
         updateListener,
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
@@ -140,7 +219,7 @@ export function CodeEditor({ value, language, onChange, readOnly = false }: Code
       view.destroy();
       viewRef.current = null;
     };
-  }, [language, readOnly, getLanguageExtension]);
+  }, [language, readOnly, getLanguageExtension, resolvedTheme, editorSettings]);
 
   // Update content when value prop changes externally
   useEffect(() => {

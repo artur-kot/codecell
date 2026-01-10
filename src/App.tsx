@@ -1,9 +1,17 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Launcher } from "./components/Launcher";
 import { WebEditor } from "./components/WebEditor";
 import { CompiledEditor } from "./components/CompiledEditor";
+import { useSettingsStore } from "./stores/settingsStore";
 
 function App() {
+  const initTheme = useSettingsStore((state) => state.initTheme);
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
+
   return (
     <BrowserRouter>
       <Routes>

@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Settings } from "@/components/Settings";
+import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { CodeEditor } from "@/components/common/CodeEditor";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -13,6 +16,11 @@ import {
   Loader2,
   ChevronUp,
   ChevronDown,
+  Settings as SettingsIcon,
+  Sun,
+  Moon,
+  Monitor,
+  X,
 } from "lucide-react";
 import type { TemplateType, Project } from "@/types";
 
@@ -56,10 +64,13 @@ const LANGUAGE_CONFIG: Record<
 
 export function CompiledEditor() {
   const { currentProject, setCurrentProject, updateFile } = useProjectStore();
+  const { setThemeMode } = useSettingsStore();
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [showOutput, setShowOutput] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const commandPalette = useCommandPalette();
   const outputHeight = 200;
 
   const params = new URLSearchParams(window.location.search);
@@ -140,6 +151,75 @@ export function CompiledEditor() {
     [currentProject, updateFile]
   );
 
+  // Command palette commands
+  const commands: PaletteCommand[] = useMemo(
+    () => [
+      // Run commands
+      {
+        id: "run-code",
+        label: "Run Code",
+        description: "Execute the current code",
+        shortcut: "Ctrl+Enter",
+        icon: <Play className="h-4 w-4" />,
+        action: handleRun,
+        category: "Run",
+      },
+      {
+        id: "clear-output",
+        label: "Clear Output",
+        description: "Clear the output panel",
+        icon: <Terminal className="h-4 w-4" />,
+        action: () => setResult(null),
+        category: "Run",
+      },
+      // View commands
+      {
+        id: "toggle-output",
+        label: showOutput ? "Hide Output" : "Show Output",
+        description: "Toggle the output panel",
+        icon: <Terminal className="h-4 w-4" />,
+        action: () => setShowOutput(!showOutput),
+        category: "View",
+      },
+      // Theme commands
+      {
+        id: "theme-light",
+        label: "Light Theme",
+        description: "Switch to Catppuccin Latte",
+        icon: <Sun className="h-4 w-4" />,
+        action: () => setThemeMode("light"),
+        category: "Theme",
+      },
+      {
+        id: "theme-dark",
+        label: "Dark Theme",
+        description: "Switch to Catppuccin Mocha",
+        icon: <Moon className="h-4 w-4" />,
+        action: () => setThemeMode("dark"),
+        category: "Theme",
+      },
+      {
+        id: "theme-system",
+        label: "System Theme",
+        description: "Follow system preference",
+        icon: <Monitor className="h-4 w-4" />,
+        action: () => setThemeMode("system"),
+        category: "Theme",
+      },
+      // Settings
+      {
+        id: "open-settings",
+        label: "Open Settings",
+        description: "Configure editor preferences",
+        shortcut: "Ctrl+,",
+        icon: <SettingsIcon className="h-4 w-4" />,
+        action: () => setShowSettings(true),
+        category: "Settings",
+      },
+    ],
+    [showOutput, handleRun, setThemeMode]
+  );
+
   if (isLoading || !currentProject) {
     return (
       <div className="flex h-screen items-center justify-center bg-base">
@@ -202,6 +282,16 @@ export function CompiledEditor() {
             ) : (
               <ChevronUp className="h-3 w-3" />
             )}
+          </button>
+
+          <div className="mx-2 h-4 w-px bg-border" />
+
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+            title="Settings"
+          >
+            <SettingsIcon className="h-4 w-4" />
           </button>
         </div>
       </header>
@@ -269,12 +359,21 @@ export function CompiledEditor() {
                 )}
               </div>
 
-              <button
-                onClick={() => setResult(null)}
-                className="font-mono text-xs text-text-subtle transition-colors hover:text-text-muted"
-              >
-                Clear
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setResult(null)}
+                  className="font-mono text-xs text-text-subtle transition-colors hover:text-text-muted"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setShowOutput(false)}
+                  className="rounded p-1 text-text-subtle transition-colors hover:bg-surface-0 hover:text-text-muted"
+                  title="Close output panel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
             {/* Output content */}
@@ -327,6 +426,16 @@ export function CompiledEditor() {
           </span>
         </div>
       </footer>
+
+      {/* Settings Modal */}
+      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        commands={commands}
+      />
     </div>
   );
 }

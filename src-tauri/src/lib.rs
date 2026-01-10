@@ -64,15 +64,6 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
-        .item(&PredefinedMenuItem::undo(app, None)?)
-        .item(&PredefinedMenuItem::redo(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::cut(app, None)?)
-        .item(&PredefinedMenuItem::copy(app, None)?)
-        .item(&PredefinedMenuItem::paste(app, None)?)
-        .item(&PredefinedMenuItem::select_all(app, None)?)
-        .build()?;
 
     let toggle_preview = MenuItemBuilder::with_id("toggle_preview", "Toggle Preview")
         .accelerator("CmdOrCtrl+P")
@@ -110,7 +101,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::with_items(
         app,
         &[
-            &app_menu, &file_menu, &edit_menu, &view_menu, &run_menu, &help_menu,
+            &app_menu, &file_menu, &view_menu, &run_menu, &help_menu,
         ],
     )?;
 
@@ -227,6 +218,7 @@ pub fn run() {
             commands::execute_rust,
             commands::execute_java,
             commands::execute_typescript,
+            commands::get_system_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

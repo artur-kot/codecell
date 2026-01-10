@@ -1,14 +1,18 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useProjectStore } from "@/stores/projectStore";
 import { QuickTemplates } from "./QuickTemplates";
 import { RecentProjects } from "./RecentProjects";
-import { Plus, Hexagon } from "lucide-react";
+import { ThemeToggle } from "@/components/common";
+import { Settings } from "@/components/Settings";
+import { Plus, Hexagon, Settings as SettingsIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { TemplateType, WebTemplateConfig } from "@/types";
 
 export function Launcher() {
   const { loadRecentProjects, loadQuickTemplates, createProject } =
     useProjectStore();
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     loadRecentProjects();
@@ -29,6 +33,9 @@ export function Launcher() {
       projectId: project.id,
       templateType: template,
     });
+
+    // Close launcher window
+    await getCurrentWindow().close();
   };
 
   return (
@@ -100,17 +107,25 @@ export function Launcher() {
         <footer className="mt-6 animate-fade-in stagger-6">
           <div className="flex items-center justify-between text-xs text-text-subtle">
             <span className="font-mono">v0.1.0</span>
-            <div className="flex items-center gap-4">
-              <button className="transition-colors hover:text-text-muted">
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-surface-0 hover:text-text-muted"
+              >
+                <SettingsIcon className="h-3.5 w-3.5" />
                 Settings
               </button>
-              <button className="transition-colors hover:text-text-muted">
+              <button className="rounded-md px-2 py-1 transition-colors hover:bg-surface-0 hover:text-text-muted">
                 Help
               </button>
             </div>
           </div>
         </footer>
       </div>
+
+      {/* Settings Modal */}
+      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }

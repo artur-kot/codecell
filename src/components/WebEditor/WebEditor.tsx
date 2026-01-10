@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Settings } from "@/components/Settings";
+import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
-import { CodeEditor } from "@/components/common/CodeEditor";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { CodeEditor } from "@/components/common";
 import {
   FileCode,
   Eye,
@@ -9,6 +12,11 @@ import {
   Maximize2,
   Minimize2,
   Loader2,
+  Settings as SettingsIcon,
+  Sun,
+  Moon,
+  Monitor,
+  Code,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -24,13 +32,16 @@ const FILE_CONFIG: Record<string, { icon: string; color: string }> = {
 
 export function WebEditor() {
   const { currentProject, setCurrentProject, updateFile } = useProjectStore();
+  const { setThemeMode } = useSettingsStore();
   const [activeTab, setActiveTab] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const commandPalette = useCommandPalette();
 
   // Load project from temp storage on mount
   useEffect(() => {
@@ -94,6 +105,84 @@ export function WebEditor() {
     [currentProject, activeTab, updateFile, refreshPreview]
   );
 
+  // Command palette commands
+  const commands: PaletteCommand[] = useMemo(
+    () => [
+      // View commands
+      {
+        id: "toggle-preview",
+        label: showPreview ? "Hide Preview" : "Show Preview",
+        description: "Toggle the live preview panel",
+        shortcut: "Ctrl+P",
+        icon: showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />,
+        action: () => setShowPreview(!showPreview),
+        category: "View",
+      },
+      {
+        id: "toggle-fullscreen",
+        label: isPreviewFullscreen ? "Exit Fullscreen Preview" : "Fullscreen Preview",
+        description: "Toggle fullscreen mode for preview",
+        icon: isPreviewFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />,
+        action: () => setIsPreviewFullscreen(!isPreviewFullscreen),
+        category: "View",
+      },
+      {
+        id: "refresh-preview",
+        label: "Refresh Preview",
+        description: "Reload the preview iframe",
+        shortcut: "Ctrl+R",
+        icon: <RefreshCw className="h-4 w-4" />,
+        action: () => setPreviewKey((k) => k + 1),
+        category: "View",
+      },
+      // File commands
+      ...(currentProject?.files.map((file, index) => ({
+        id: `switch-to-${file.name}`,
+        label: `Switch to ${file.name}`,
+        description: `Open ${file.language.toUpperCase()} file`,
+        icon: <Code className="h-4 w-4" />,
+        action: () => setActiveTab(index),
+        category: "Files",
+      })) || []),
+      // Theme commands
+      {
+        id: "theme-light",
+        label: "Light Theme",
+        description: "Switch to Catppuccin Latte",
+        icon: <Sun className="h-4 w-4" />,
+        action: () => setThemeMode("light"),
+        category: "Theme",
+      },
+      {
+        id: "theme-dark",
+        label: "Dark Theme",
+        description: "Switch to Catppuccin Mocha",
+        icon: <Moon className="h-4 w-4" />,
+        action: () => setThemeMode("dark"),
+        category: "Theme",
+      },
+      {
+        id: "theme-system",
+        label: "System Theme",
+        description: "Follow system preference",
+        icon: <Monitor className="h-4 w-4" />,
+        action: () => setThemeMode("system"),
+        category: "Theme",
+      },
+      // Settings
+      {
+        id: "open-settings",
+        label: "Open Settings",
+        description: "Configure editor preferences",
+        shortcut: "Ctrl+,",
+        icon: <SettingsIcon className="h-4 w-4" />,
+        action: () => setShowSettings(true),
+        category: "Settings",
+      },
+    ],
+    [showPreview, isPreviewFullscreen, currentProject?.files, setThemeMode]
+  );
+
   if (isLoading || !currentProject) {
     return (
       <div className="flex h-screen items-center justify-center bg-base">
@@ -145,6 +234,16 @@ export function WebEditor() {
             title="Refresh preview"
           >
             <RefreshCw className="h-4 w-4" />
+          </button>
+
+          <div className="mx-2 h-4 w-px bg-border" />
+
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+            title="Settings"
+          >
+            <SettingsIcon className="h-4 w-4" />
           </button>
         </div>
       </header>
@@ -275,6 +374,16 @@ export function WebEditor() {
           </span>
         </div>
       </footer>
+
+      {/* Settings Modal */}
+      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        commands={commands}
+      />
     </div>
   );
 }

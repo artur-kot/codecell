@@ -3,8 +3,9 @@
 
 @source "./**/*.{ts,tsx}";
 
-@theme {
-  /* Catppuccin Mocha inspired palette */
+/* Dark Theme (Catppuccin Mocha) - Default */
+:root,
+[data-theme="dark"] {
   --color-base: #1e1e2e;
   --color-mantle: #181825;
   --color-crust: #11111b;
@@ -12,24 +13,20 @@
   --color-surface-1: #45475a;
   --color-surface-2: #585b70;
 
-  /* Semantic colors */
   --color-sidebar: #181825;
   --color-editor: #1e1e2e;
   --color-output: #181825;
   --color-border: #313244;
   --color-border-subtle: #262637;
 
-  /* Text */
   --color-text: #cdd6f4;
-  --color-text-muted: #6c7086;
-  --color-text-subtle: #45475a;
+  --color-text-muted: #a6adc8;
+  --color-text-subtle: #6c7086;
 
-  /* Accent - Electric Blue */
   --color-accent: #89b4fa;
   --color-accent-hover: #b4befe;
   --color-accent-glow: rgba(137, 180, 250, 0.15);
 
-  /* Status colors */
   --color-success: #a6e3a1;
   --color-success-glow: rgba(166, 227, 161, 0.15);
   --color-error: #f38ba8;
@@ -37,7 +34,6 @@
   --color-warning: #f9e2af;
   --color-warning-glow: rgba(249, 226, 175, 0.15);
 
-  /* Syntax highlighting */
   --color-syntax-keyword: #cba6f7;
   --color-syntax-string: #a6e3a1;
   --color-syntax-number: #fab387;
@@ -46,17 +42,95 @@
   --color-syntax-operator: #89dceb;
   --color-syntax-class: #f9e2af;
 
-  /* Fonts */
-  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
-  --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
-
-  /* Additional template colors */
   --color-template-web: #f38ba8;
   --color-template-react: #89dceb;
   --color-template-node: #a6e3a1;
   --color-template-python: #f9e2af;
   --color-template-rust: #fab387;
   --color-template-java: #cba6f7;
+}
+
+/* Light Theme (Catppuccin Latte) */
+[data-theme="light"] {
+  --color-base: #eff1f5;
+  --color-mantle: #e6e9ef;
+  --color-crust: #dce0e8;
+  --color-surface-0: #ccd0da;
+  --color-surface-1: #bcc0cc;
+  --color-surface-2: #acb0be;
+
+  --color-sidebar: #e6e9ef;
+  --color-editor: #eff1f5;
+  --color-output: #e6e9ef;
+  --color-border: #bcc0cc;
+  --color-border-subtle: #ccd0da;
+
+  --color-text: #4c4f69;
+  --color-text-muted: #5c5f77;
+  --color-text-subtle: #7c7f93;
+
+  --color-accent: #1e66f5;
+  --color-accent-hover: #7287fd;
+  --color-accent-glow: rgba(30, 102, 245, 0.12);
+
+  --color-success: #40a02b;
+  --color-success-glow: rgba(64, 160, 43, 0.12);
+  --color-error: #d20f39;
+  --color-error-glow: rgba(210, 15, 57, 0.12);
+  --color-warning: #df8e1d;
+  --color-warning-glow: rgba(223, 142, 29, 0.12);
+
+  --color-syntax-keyword: #8839ef;
+  --color-syntax-string: #40a02b;
+  --color-syntax-number: #fe640b;
+  --color-syntax-function: #1e66f5;
+  --color-syntax-comment: #9ca0b0;
+  --color-syntax-operator: #04a5e5;
+  --color-syntax-class: #df8e1d;
+
+  --color-template-web: #d20f39;
+  --color-template-react: #04a5e5;
+  --color-template-node: #40a02b;
+  --color-template-python: #df8e1d;
+  --color-template-rust: #fe640b;
+  --color-template-java: #8839ef;
+}
+
+@theme {
+  /* Fonts - shared between themes */
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Reference CSS variables for Tailwind */
+  --color-base: var(--color-base);
+  --color-mantle: var(--color-mantle);
+  --color-crust: var(--color-crust);
+  --color-surface-0: var(--color-surface-0);
+  --color-surface-1: var(--color-surface-1);
+  --color-surface-2: var(--color-surface-2);
+  --color-sidebar: var(--color-sidebar);
+  --color-editor: var(--color-editor);
+  --color-output: var(--color-output);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-glow: var(--color-accent-glow);
+  --color-success: var(--color-success);
+  --color-success-glow: var(--color-success-glow);
+  --color-error: var(--color-error);
+  --color-error-glow: var(--color-error-glow);
+  --color-warning: var(--color-warning);
+  --color-warning-glow: var(--color-warning-glow);
+  --color-template-web: var(--color-template-web);
+  --color-template-react: var(--color-template-react);
+  --color-template-node: var(--color-template-node);
+  --color-template-python: var(--color-template-python);
+  --color-template-rust: var(--color-template-rust);
+  --color-template-java: var(--color-template-java);
 }
 
 html {
