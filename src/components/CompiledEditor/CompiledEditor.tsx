@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   Play,
+  Square,
   Terminal,
   FileCode,
   Clock,
@@ -30,6 +31,11 @@ interface ExecutionResult {
   stderr: string;
   exitCode: number;
   durationMs: number;
+}
+
+interface ExecutionOutput {
+  line: string;
+  stream: "stdout" | "stderr";
 }
 
 const LANGUAGE_CONFIG: Record<
@@ -68,6 +74,7 @@ export function CompiledEditor() {
   const { setThemeMode } = useSettingsStore();
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
+  const [streamingOutput, setStreamingOutput] = useState<{ stdout: string; stderr: string }>({ stdout: "", stderr: "" });
   const [showOutput, setShowOutput] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -99,10 +106,110 @@ export function CompiledEditor() {
     loadProject();
   }, [projectId, currentProject, setCurrentProject]);
 
+  const { createProjectWithoutSettingCurrent } = useProjectStore();
+
+  // Handle creating new project from template
+  const handleNewFromTemplate = useCallback(async (templateId: string) => {
+    // Map template IDs to types
+    const templateMap: Record<string, { type: TemplateType; config?: any }> = {
+      "web": { type: "web", config: { markup: "html", styling: "css", script: "javascript", framework: "none" } },
+      "web-react": { type: "web", config: { markup: "html", styling: "css", script: "typescript", framework: "react" } },
+      "node": { type: "node" },
+      "python": { type: "python" },
+      "rust": { type: "rust" },
+      "java": { type: "java" },
+    };
+
+    const template = templateMap[templateId];
+    if (!template) return;
+
+    // Create project without updating global state (to avoid affecting this window)
+    const project = createProjectWithoutSettingCurrent(template.type, template.config);
+
+    // Save project to temp storage
+    await invoke("save_temp_project", { project });
+
+    // Open new editor window
+    await invoke("open_editor_window", {
+      projectId: project.id,
+      templateType: template.type,
+    });
+  }, [createProjectWithoutSettingCurrent]);
+
+  const windowId = `editor-${projectId}`;
+
+  const handleRun = useCallback(async () => {
+    if (!currentProject || isRunning) return;
+
+    const file = currentProject.files[0];
+    if (!file) return;
+
+    setIsRunning(true);
+    setResult(null);
+    setStreamingOutput({ stdout: "", stderr: "" });
+    setShowOutput(true);
+
+    try {
+      // This now returns immediately - output comes via events
+      await invoke(config.executor, {
+        code: file.content,
+        windowId,
+      });
+    } catch (error) {
+      setResult({
+        stdout: "",
+        stderr: String(error),
+        exitCode: -1,
+        durationMs: 0,
+      });
+      setIsRunning(false);
+    }
+  }, [currentProject, isRunning, config.executor, windowId]);
+
+  const handleStop = useCallback(async () => {
+    if (!isRunning) return;
+    try {
+      await invoke("stop_execution", { windowId });
+      setIsRunning(false);
+    } catch (error) {
+      console.error("Failed to stop execution:", error);
+    }
+  }, [isRunning, windowId]);
+
+  // Listen for execution events from backend
+  useEffect(() => {
+    const unlistenStateChange = listen<boolean>("execution:state-changed", (event) => {
+      setIsRunning(event.payload);
+    });
+
+    const unlistenOutput = listen<ExecutionOutput>("execution:output", (event) => {
+      const { line, stream } = event.payload;
+      setStreamingOutput(prev => ({
+        ...prev,
+        [stream]: prev[stream] + line,
+      }));
+    });
+
+    const unlistenCompleted = listen<ExecutionResult>("execution:completed", (event) => {
+      setResult(event.payload);
+      setIsRunning(false);
+    });
+
+    return () => {
+      unlistenStateChange.then((fn) => fn());
+      unlistenOutput.then((fn) => fn());
+      unlistenCompleted.then((fn) => fn());
+    };
+  }, []);
+
   // Listen for menu events
   useEffect(() => {
     const unlistenRun = listen("menu:run-code", () => {
       handleRun();
+    });
+
+    const unlistenStop = listen("menu:stop-code", () => {
+      handleStop();
     });
 
     const unlistenToggleOutput = listen("menu:toggle-output", () => {
@@ -129,16 +236,43 @@ export function CompiledEditor() {
       window.open("https://github.com/arturkot/codecell", "_blank");
     });
 
+    const unlistenNewTemplate = listen<string>("menu:new-template", (event) => {
+      handleNewFromTemplate(event.payload);
+    });
+
+    const unlistenOpenRecent = listen<string>("menu:open-recent", async (event) => {
+      const path = event.payload;
+      try {
+        // Load the project from the path
+        const project = await invoke<Project>("load_project_from_path", { path });
+        project.savedPath = path;
+
+        // Save to temp storage
+        await invoke("save_temp_project", { project });
+
+        // Open new editor window
+        await invoke("open_editor_window", {
+          projectId: project.id,
+          templateType: project.template,
+        });
+      } catch (error) {
+        console.error("Failed to open recent project:", error);
+      }
+    });
+
     return () => {
       unlistenRun.then((fn) => fn());
+      unlistenStop.then((fn) => fn());
       unlistenToggleOutput.then((fn) => fn());
       unlistenSave.then((fn) => fn());
       unlistenSaveAs.then((fn) => fn());
       unlistenAbout.then((fn) => fn());
       unlistenReportIssue.then((fn) => fn());
       unlistenDocumentation.then((fn) => fn());
+      unlistenNewTemplate.then((fn) => fn());
+      unlistenOpenRecent.then((fn) => fn());
     };
-  }, [currentProject, saveProject, saveProjectAs]);
+  }, [currentProject, saveProject, saveProjectAs, handleNewFromTemplate, handleRun, handleStop]);
 
   // Autosave every 30 seconds when dirty
   useEffect(() => {
@@ -150,33 +284,6 @@ export function CompiledEditor() {
 
     return () => clearInterval(autosaveTimer);
   }, [isDirty, currentProject?.savedPath, saveProject]);
-
-  const handleRun = useCallback(async () => {
-    if (!currentProject || isRunning) return;
-
-    const file = currentProject.files[0];
-    if (!file) return;
-
-    setIsRunning(true);
-    setResult(null);
-    setShowOutput(true);
-
-    try {
-      const execResult = await invoke<ExecutionResult>(config.executor, {
-        code: file.content,
-      });
-      setResult(execResult);
-    } catch (error) {
-      setResult({
-        stdout: "",
-        stderr: String(error),
-        exitCode: -1,
-        durationMs: 0,
-      });
-    } finally {
-      setIsRunning(false);
-    }
-  }, [currentProject, isRunning, config.executor]);
 
   const handleContentChange = useCallback(
     (content: string) => {
@@ -305,6 +412,16 @@ export function CompiledEditor() {
             {isRunning ? "Running..." : "Run"}
           </button>
 
+          {isRunning && (
+            <button
+              onClick={handleStop}
+              className="flex items-center gap-2 rounded-md bg-error/10 px-3 py-1.5 font-mono text-xs font-medium text-error transition-all hover:bg-error/20"
+            >
+              <Square className="h-3.5 w-3.5" />
+              Stop
+            </button>
+          )}
+
           <button
             onClick={() => setShowOutput(!showOutput)}
             className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
@@ -426,7 +543,24 @@ export function CompiledEditor() {
                 </p>
               )}
 
-              {result && (
+              {/* Show streaming output while running */}
+              {isRunning && (streamingOutput.stdout || streamingOutput.stderr) && (
+                <div className="space-y-2">
+                  {streamingOutput.stdout && (
+                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text">
+                      {streamingOutput.stdout}
+                    </pre>
+                  )}
+                  {streamingOutput.stderr && (
+                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-error">
+                      {streamingOutput.stderr}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* Show final result when completed */}
+              {result && !isRunning && (
                 <div className="space-y-2">
                   {result.stdout && (
                     <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text">

@@ -83,7 +83,7 @@ export function QuickTemplates({ onCreate }: QuickTemplatesProps) {
             </div>
 
             {/* Name */}
-            <h3 className="mb-1 font-mono text-sm font-medium text-text transition-colors group-hover:text-white">
+            <h3 className="mb-1 font-mono text-sm font-medium text-text">
               {template.name}
             </h3>
 

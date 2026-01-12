@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Launcher } from "./components/Launcher";
 import { WebEditor } from "./components/WebEditor";
 import { CompiledEditor } from "./components/CompiledEditor";
+import { SettingsPage } from "./components/Settings";
 import { useSettingsStore } from "./stores/settingsStore";
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Launcher />} />
         <Route path="/editor" element={<EditorRouter />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </BrowserRouter>
   );

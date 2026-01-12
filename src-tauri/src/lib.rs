@@ -10,25 +10,17 @@ use tauri::{
     Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
-fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let about_codecell = MenuItemBuilder::with_id("about", "About CodeCell").build(app)?;
 
+    // App menu - simplified for cross-platform compatibility
     let app_menu = SubmenuBuilder::new(app, "CodeCell")
         .item(&about_codecell)
-        .separator()
-        .item(&PredefinedMenuItem::services(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::hide(app, None)?)
-        .item(&PredefinedMenuItem::hide_others(app, None)?)
-        .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
-    let new_note = MenuItemBuilder::with_id("new_note", "New Note...")
-        .accelerator("CmdOrCtrl+N")
-        .build(app)?;
-
+    // File menu
     let new_web = MenuItemBuilder::with_id("new_web", "HTML/CSS/JS").build(app)?;
     let new_react = MenuItemBuilder::with_id("new_react", "React + TypeScript").build(app)?;
     let new_node = MenuItemBuilder::with_id("new_node", "Node.js").build(app)?;
@@ -36,16 +28,59 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     let new_rust = MenuItemBuilder::with_id("new_rust", "Rust").build(app)?;
     let new_java = MenuItemBuilder::with_id("new_java", "Java").build(app)?;
 
-    let new_from_template =
-        SubmenuBuilder::new(app, "New from Template")
-            .items(&[
-                &new_web, &new_react, &new_node, &new_python, &new_rust, &new_java,
-            ])
-            .build()?;
+    let new_from_template = SubmenuBuilder::new(app, "New from Template")
+        .items(&[
+            &new_web, &new_react, &new_node, &new_python, &new_rust, &new_java,
+        ])
+        .build()?;
 
     let open = MenuItemBuilder::with_id("open", "Open...")
         .accelerator("CmdOrCtrl+O")
         .build(app)?;
+
+    // Build Recent Notes submenu
+    let recent_submenu = {
+        let mut builder = SubmenuBuilder::new(app, "Recent Notes");
+
+        // Try to get recent projects from state
+        if let Some(state) = app.try_state::<AppState>() {
+            if let Ok(manager) = state.project_manager.lock() {
+                if let Ok(recent) = manager.get_recent_projects() {
+                    if recent.is_empty() {
+                        let no_recent = MenuItemBuilder::with_id("no_recent", "No Recent Notes")
+                            .enabled(false)
+                            .build(app)?;
+                        builder = builder.item(&no_recent);
+                    } else {
+                        for (i, project) in recent.iter().take(10).enumerate() {
+                            let item = MenuItemBuilder::with_id(
+                                &format!("recent_{}", i),
+                                &project.name,
+                            ).build(app)?;
+                            builder = builder.item(&item);
+                        }
+                    }
+                } else {
+                    let no_recent = MenuItemBuilder::with_id("no_recent", "No Recent Notes")
+                        .enabled(false)
+                        .build(app)?;
+                    builder = builder.item(&no_recent);
+                }
+            } else {
+                let no_recent = MenuItemBuilder::with_id("no_recent", "No Recent Notes")
+                    .enabled(false)
+                    .build(app)?;
+                builder = builder.item(&no_recent);
+            }
+        } else {
+            let no_recent = MenuItemBuilder::with_id("no_recent", "No Recent Notes")
+                .enabled(false)
+                .build(app)?;
+            builder = builder.item(&no_recent);
+        }
+
+        builder.build()?
+    };
 
     let save = MenuItemBuilder::with_id("save", "Save")
         .accelerator("CmdOrCtrl+S")
@@ -56,31 +91,38 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         .build(app)?;
 
     let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&new_note)
         .item(&new_from_template)
         .item(&open)
+        .item(&recent_submenu)
         .separator()
         .item(&save)
         .item(&save_as)
+        .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
+    // View menu - different options based on editor type, no orphan separators
+    let view_menu = if is_web_editor {
+        let toggle_preview = MenuItemBuilder::with_id("toggle_preview", "Toggle Preview")
+            .accelerator("CmdOrCtrl+P")
+            .build(app)?;
 
-    let toggle_preview = MenuItemBuilder::with_id("toggle_preview", "Toggle Preview")
-        .accelerator("CmdOrCtrl+P")
-        .build(app)?;
+        SubmenuBuilder::new(app, "View")
+            .item(&toggle_preview)
+            .item(&PredefinedMenuItem::fullscreen(app, None)?)
+            .build()?
+    } else {
+        let toggle_output = MenuItemBuilder::with_id("toggle_output", "Toggle Output")
+            .accelerator("CmdOrCtrl+`")
+            .build(app)?;
 
-    let toggle_output = MenuItemBuilder::with_id("toggle_output", "Toggle Output")
-        .accelerator("CmdOrCtrl+`")
-        .build(app)?;
+        SubmenuBuilder::new(app, "View")
+            .item(&toggle_output)
+            .item(&PredefinedMenuItem::fullscreen(app, None)?)
+            .build()?
+    };
 
-    let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&toggle_preview)
-        .item(&toggle_output)
-        .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .build()?;
-
+    // Run menu
     let run_code = MenuItemBuilder::with_id("run_code", "Run Code")
         .accelerator("CmdOrCtrl+Enter")
         .build(app)?;
@@ -94,6 +136,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&stop_code)
         .build()?;
 
+    // Help menu
     let help_menu = SubmenuBuilder::new(app, "Help")
         .item(&MenuItemBuilder::with_id("documentation", "Documentation").build(app)?)
         .item(&MenuItemBuilder::with_id("report_issue", "Report Issue...").build(app)?)
@@ -139,11 +182,7 @@ pub fn run() {
             app.manage(state);
             app.manage(RunningProcesses::new());
 
-            // Build native menu (for editor windows)
-            let menu = build_menu(app)?;
-            app.set_menu(menu.clone())?;
-
-            // Hide menu on launcher window
+            // Hide menu on launcher window (editor windows get menus when created)
             if let Some(launcher) = app.get_webview_window("launcher") {
                 let _ = launcher.remove_menu();
             }
@@ -151,49 +190,46 @@ pub fn run() {
             // Handle menu events
             app.on_menu_event(|app, event| {
                 let id = event.id().as_ref();
+
+                // Helper to emit to focused window only (for window-specific actions)
+                let emit_to_focused = |event_name: &str, payload: &str| {
+                    // Find the focused editor window
+                    for (label, window) in app.webview_windows() {
+                        if label.starts_with("editor-") && window.is_focused().unwrap_or(false) {
+                            let _ = window.emit(event_name, payload);
+                            return;
+                        }
+                    }
+                };
+
+                let emit_to_focused_empty = |event_name: &str| {
+                    for (label, window) in app.webview_windows() {
+                        if label.starts_with("editor-") && window.is_focused().unwrap_or(false) {
+                            let _ = window.emit(event_name, ());
+                            return;
+                        }
+                    }
+                };
+
                 match id {
-                    "new_note" => {
-                        let _ = app.emit("menu:new-note", ());
-                    }
-                    "new_web" => {
-                        let _ = app.emit("menu:new-template", "web");
-                    }
-                    "new_react" => {
-                        let _ = app.emit("menu:new-template", "web-react");
-                    }
-                    "new_node" => {
-                        let _ = app.emit("menu:new-template", "node");
-                    }
-                    "new_python" => {
-                        let _ = app.emit("menu:new-template", "python");
-                    }
-                    "new_rust" => {
-                        let _ = app.emit("menu:new-template", "rust");
-                    }
-                    "new_java" => {
-                        let _ = app.emit("menu:new-template", "java");
-                    }
-                    "open" => {
-                        let _ = app.emit("menu:open", ());
-                    }
-                    "save" => {
-                        let _ = app.emit("menu:save", ());
-                    }
-                    "save_as" => {
-                        let _ = app.emit("menu:save-as", ());
-                    }
-                    "toggle_preview" => {
-                        let _ = app.emit("menu:toggle-preview", ());
-                    }
-                    "toggle_output" => {
-                        let _ = app.emit("menu:toggle-output", ());
-                    }
-                    "run_code" => {
-                        let _ = app.emit("menu:run-code", ());
-                    }
-                    "stop_code" => {
-                        let _ = app.emit("menu:stop-code", ());
-                    }
+                    // These create new windows, so broadcast to focused window
+                    "new_web" => emit_to_focused("menu:new-template", "web"),
+                    "new_react" => emit_to_focused("menu:new-template", "web-react"),
+                    "new_node" => emit_to_focused("menu:new-template", "node"),
+                    "new_python" => emit_to_focused("menu:new-template", "python"),
+                    "new_rust" => emit_to_focused("menu:new-template", "rust"),
+                    "new_java" => emit_to_focused("menu:new-template", "java"),
+
+                    // Window-specific actions - emit only to focused window
+                    "open" => emit_to_focused_empty("menu:open"),
+                    "save" => emit_to_focused_empty("menu:save"),
+                    "save_as" => emit_to_focused_empty("menu:save-as"),
+                    "toggle_preview" => emit_to_focused_empty("menu:toggle-preview"),
+                    "toggle_output" => emit_to_focused_empty("menu:toggle-output"),
+                    "run_code" => emit_to_focused_empty("menu:run-code"),
+                    "stop_code" => emit_to_focused_empty("menu:stop-code"),
+
+                    // Global actions - can broadcast to all
                     "documentation" => {
                         let _ = app.emit("menu:documentation", ());
                     }
@@ -203,7 +239,30 @@ pub fn run() {
                     "about" => {
                         let _ = app.emit("menu:about", ());
                     }
-                    _ => {}
+                    _ => {
+                        // Handle recent notes menu items (recent_0, recent_1, etc.)
+                        if id.starts_with("recent_") {
+                            if let Ok(index) = id.strip_prefix("recent_").unwrap().parse::<usize>() {
+                                if let Some(state) = app.try_state::<AppState>() {
+                                    if let Ok(manager) = state.project_manager.lock() {
+                                        if let Ok(recent) = manager.get_recent_projects() {
+                                            if let Some(project) = recent.get(index) {
+                                                // Check if window for this project is already open
+                                                let window_label = format!("editor-{}", project.id);
+                                                if let Some(window) = app.get_webview_window(&window_label) {
+                                                    // Window exists, focus it
+                                                    let _ = window.set_focus();
+                                                } else {
+                                                    // Window doesn't exist, emit to open it
+                                                    let _ = app.emit("menu:open-recent", &project.path);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
@@ -226,6 +285,7 @@ pub fn run() {
             commands::get_recent_projects,
             commands::add_recent_project,
             commands::open_editor_window,
+            commands::open_settings_window,
             commands::close_editor_window,
             commands::focus_launcher,
             commands::execute_python,
@@ -233,26 +293,37 @@ pub fn run() {
             commands::execute_rust,
             commands::execute_java,
             commands::execute_typescript,
+            commands::stop_execution,
+            commands::kill_window_processes,
             commands::get_system_fonts,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                let label = window.label();
-                let app = window.app_handle();
+                let label = window.label().to_string();
+                let app = window.app_handle().clone();
 
                 // Check if this is an editor window
                 if label.starts_with("editor-") {
+                    // Kill any running processes for this window
+                    if let Some(processes) = app.try_state::<RunningProcesses>() {
+                        let processes = processes.inner().clone();
+                        let window_id = label.clone();
+                        tauri::async_runtime::spawn(async move {
+                            processes.kill(&window_id).await;
+                        });
+                    }
+
                     // Count remaining editor windows (excluding this one being closed)
                     let editor_count = app
                         .webview_windows()
                         .keys()
-                        .filter(|l| l.starts_with("editor-") && *l != label)
+                        .filter(|l| l.starts_with("editor-") && *l != &label)
                         .count();
 
                     // If no other editors remain, recreate launcher
                     if editor_count == 0 {
                         if let Ok(launcher) = WebviewWindowBuilder::new(
-                            app,
+                            &app,
                             "launcher",
                             WebviewUrl::App("/".into()),
                         )

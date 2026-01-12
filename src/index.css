@@ -413,6 +413,34 @@ body {
   box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
 }
 
+/* Light theme template card improvements */
+[data-theme="light"] .template-card {
+  background-color: rgba(255, 255, 255, 0.7);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .template-card:hover {
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.15);
+}
+
+/* Templates section fade mask for overflow */
+.templates-fade-mask {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 48px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 48px),
+    transparent 100%
+  );
+}
+
 /* Staggered animation delays */
 .stagger-1 { animation-delay: 0.05s; }
 .stagger-2 { animation-delay: 0.1s; }

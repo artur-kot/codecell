@@ -1,5 +1,7 @@
 import { useProjectStore } from "@/stores/projectStore";
-import type { TemplateType, WebTemplateConfig } from "@/types";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { TemplateType, Project } from "@/types";
 import {
   Globe,
   Server,
@@ -13,7 +15,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 interface RecentProjectsProps {
-  onOpen: (template: TemplateType, config?: WebTemplateConfig) => void;
+  onOpenNew: (template: TemplateType) => void;
 }
 
 const TEMPLATE_ICONS: Record<TemplateType, LucideIcon> = {
@@ -51,8 +53,33 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString();
 }
 
-export function RecentProjects({ onOpen }: RecentProjectsProps) {
+export function RecentProjects({ onOpenNew: _ }: RecentProjectsProps) {
   const { recentProjects } = useProjectStore();
+
+  const handleOpenRecent = async (projectPath: string, template: TemplateType) => {
+    try {
+      // Load the project from saved path
+      const project = await invoke<Project>("load_project_from_path", { path: projectPath });
+
+      // Set savedPath since it's not serialized in the file
+      project.savedPath = projectPath;
+
+      // Save to temp storage for editor window
+      await invoke("save_temp_project", { project });
+
+      // Open editor window
+      await invoke("open_editor_window", {
+        projectId: project.id,
+        templateType: template,
+      });
+
+      // Close launcher
+      await getCurrentWindow().close();
+    } catch (error) {
+      console.error("Failed to open recent project:", error);
+      // Project file might have been moved/deleted - could show a notification here
+    }
+  };
 
   if (recentProjects.length === 0) {
     return (
@@ -75,7 +102,7 @@ export function RecentProjects({ onOpen }: RecentProjectsProps) {
         return (
           <button
             key={project.id}
-            onClick={() => onOpen(project.template)}
+            onClick={() => handleOpenRecent(project.path, project.template)}
             className={`group flex items-center gap-3 rounded-lg border border-transparent bg-transparent px-3 py-3 text-left transition-all animate-fade-in hover:border-border hover:bg-surface-0/50 stagger-${Math.min(index + 2, 6)}`}
           >
             {/* Icon */}
@@ -94,7 +121,7 @@ export function RecentProjects({ onOpen }: RecentProjectsProps) {
 
             {/* Info */}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-sm font-medium text-text transition-colors group-hover:text-white">
+              <p className="truncate font-mono text-sm font-medium text-text">
                 {project.name}
               </p>
               <div className="flex items-center gap-2 text-text-subtle">

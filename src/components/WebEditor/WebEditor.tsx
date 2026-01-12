@@ -68,7 +68,36 @@ export function WebEditor() {
   }, [currentProject, setCurrentProject]);
 
   // Get save functions from store
-  const { saveProject, saveProjectAs, isDirty } = useProjectStore();
+  const { saveProject, saveProjectAs, isDirty, createProjectWithoutSettingCurrent } = useProjectStore();
+
+  // Handle creating new project from template
+  const handleNewFromTemplate = useCallback(async (templateId: string) => {
+    // Map template IDs to types
+    type TemplateType = "web" | "node" | "python" | "rust" | "java" | "typescript";
+    const templateMap: Record<string, { type: TemplateType; config?: any }> = {
+      "web": { type: "web", config: { markup: "html", styling: "css", script: "javascript", framework: "none" } },
+      "web-react": { type: "web", config: { markup: "html", styling: "css", script: "typescript", framework: "react" } },
+      "node": { type: "node" },
+      "python": { type: "python" },
+      "rust": { type: "rust" },
+      "java": { type: "java" },
+    };
+
+    const template = templateMap[templateId];
+    if (!template) return;
+
+    // Create project without updating global state (to avoid affecting this window)
+    const project = createProjectWithoutSettingCurrent(template.type, template.config);
+
+    // Save project to temp storage
+    await invoke("save_temp_project", { project });
+
+    // Open new editor window
+    await invoke("open_editor_window", {
+      projectId: project.id,
+      templateType: template.type,
+    });
+  }, [createProjectWithoutSettingCurrent]);
 
   // Listen for menu events
   useEffect(() => {
@@ -96,6 +125,30 @@ export function WebEditor() {
       window.open("https://github.com/arturkot/codecell", "_blank");
     });
 
+    const unlistenNewTemplate = listen<string>("menu:new-template", (event) => {
+      handleNewFromTemplate(event.payload);
+    });
+
+    const unlistenOpenRecent = listen<string>("menu:open-recent", async (event) => {
+      const path = event.payload;
+      try {
+        // Load the project from the path
+        const project = await invoke<Project>("load_project_from_path", { path });
+        project.savedPath = path;
+
+        // Save to temp storage
+        await invoke("save_temp_project", { project });
+
+        // Open new editor window
+        await invoke("open_editor_window", {
+          projectId: project.id,
+          templateType: project.template,
+        });
+      } catch (error) {
+        console.error("Failed to open recent project:", error);
+      }
+    });
+
     return () => {
       unlistenTogglePreview.then((fn) => fn());
       unlistenSave.then((fn) => fn());
@@ -103,8 +156,10 @@ export function WebEditor() {
       unlistenAbout.then((fn) => fn());
       unlistenReportIssue.then((fn) => fn());
       unlistenDocumentation.then((fn) => fn());
+      unlistenNewTemplate.then((fn) => fn());
+      unlistenOpenRecent.then((fn) => fn());
     };
-  }, [saveProject, saveProjectAs]);
+  }, [saveProject, saveProjectAs, handleNewFromTemplate]);
 
   // Autosave every 30 seconds when dirty
   useEffect(() => {

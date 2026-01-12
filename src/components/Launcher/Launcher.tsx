@@ -3,9 +3,8 @@ import { useProjectStore } from "@/stores/projectStore";
 import { QuickTemplates } from "./QuickTemplates";
 import { RecentProjects } from "./RecentProjects";
 import { ThemeToggle } from "@/components/common";
-import { Settings } from "@/components/Settings";
 import { About } from "@/components/About";
-import { Plus, Hexagon, Settings as SettingsIcon } from "lucide-react";
+import { Hexagon, Settings as SettingsIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -14,13 +13,16 @@ import type { TemplateType, WebTemplateConfig } from "@/types";
 export function Launcher() {
   const { loadRecentProjects, loadQuickTemplates, createProject } =
     useProjectStore();
-  const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
 
   useEffect(() => {
     loadRecentProjects();
     loadQuickTemplates();
   }, [loadRecentProjects, loadQuickTemplates]);
+
+  const openSettings = async () => {
+    await invoke("open_settings_window");
+  };
 
   // Listen for menu events
   useEffect(() => {
@@ -97,19 +99,10 @@ export function Launcher() {
         <main className="flex flex-1 gap-10 overflow-hidden">
           {/* Left column - Recent Notes */}
           <section className="flex w-72 flex-shrink-0 flex-col animate-fade-in stagger-1">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-text-muted">
-                Recent
-              </h2>
-              <button
-                onClick={() => handleCreateProject("web")}
-                className="group flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 font-mono text-xs font-medium text-accent transition-all hover:border-accent hover:bg-accent/10"
-              >
-                <Plus className="h-3 w-3 transition-transform group-hover:rotate-90" />
-                New
-              </button>
-            </div>
-            <RecentProjects onOpen={handleCreateProject} />
+            <h2 className="mb-4 font-mono text-sm font-medium uppercase tracking-wider text-text-muted">
+              Recent
+            </h2>
+            <RecentProjects onOpenNew={handleCreateProject} />
           </section>
 
           {/* Vertical separator */}
@@ -123,7 +116,11 @@ export function Launcher() {
             <h2 className="mb-4 font-mono text-sm font-medium uppercase tracking-wider text-text-muted">
               Start with a template
             </h2>
-            <QuickTemplates onCreate={handleCreateProject} />
+            <div className="relative flex-1 overflow-hidden">
+              <div className="templates-fade-mask h-full overflow-y-auto pb-12">
+                <QuickTemplates onCreate={handleCreateProject} />
+              </div>
+            </div>
           </section>
         </main>
 
@@ -134,7 +131,7 @@ export function Launcher() {
             <div className="flex items-center gap-2">
               <ThemeToggle />
               <button
-                onClick={() => setShowSettings(true)}
+                onClick={openSettings}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-surface-0 hover:text-text-muted"
               >
                 <SettingsIcon className="h-3.5 w-3.5" />
@@ -147,9 +144,6 @@ export function Launcher() {
           </div>
         </footer>
       </div>
-
-      {/* Settings Modal */}
-      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* About Modal */}
       <About isOpen={showAbout} onClose={() => setShowAbout(false)} />

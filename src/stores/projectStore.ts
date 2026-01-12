@@ -17,6 +17,7 @@ interface ProjectState {
   loadRecentProjects: () => Promise<void>;
   loadQuickTemplates: () => Promise<void>;
   createProject: (template: TemplateType, config?: WebTemplateConfig) => Project;
+  createProjectWithoutSettingCurrent: (template: TemplateType, config?: WebTemplateConfig) => Project;
   saveProject: () => Promise<boolean>;
   saveProjectAs: () => Promise<boolean>;
   openProject: () => Promise<boolean>;
@@ -384,8 +385,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   loadRecentProjects: async () => {
-    // TODO: Load from Tauri storage
-    set({ recentProjects: [] });
+    try {
+      const recent = await invoke<RecentProject[]>("get_recent_projects");
+      set({ recentProjects: recent });
+    } catch (error) {
+      console.error("Failed to load recent projects:", error);
+      set({ recentProjects: [] });
+    }
   },
 
   loadQuickTemplates: async () => {
@@ -409,6 +415,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     };
 
     set({ currentProject: project });
+    return project;
+  },
+
+  // Creates a project without updating the global currentProject state
+  // Use this when opening a new window from an existing editor to avoid state conflicts
+  createProjectWithoutSettingCurrent: (template, config) => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const project: Project = {
+      id,
+      name: "Untitled",
+      template,
+      webConfig: template === "web" ? config : undefined,
+      files: generateDefaultFiles(template, config),
+      createdAt: now,
+      updatedAt: now,
+      savedPath: null,
+    };
+
+    // Don't call set() - just return the project
     return project;
   },
 }));
