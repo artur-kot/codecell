@@ -9,6 +9,7 @@ use tauri::{
     menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
     Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_shell::ShellExt;
 
 pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let about_codecell = MenuItemBuilder::with_id("about", "About CodeCell").build(app)?;
@@ -129,6 +130,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
 
     let stop_code = MenuItemBuilder::with_id("stop_code", "Stop")
         .accelerator("CmdOrCtrl+.")
+        .enabled(false) // Start disabled, enable when code is running
         .build(app)?;
 
     let run_menu = SubmenuBuilder::new(app, "Run")
@@ -138,7 +140,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
 
     // Help menu
     let help_menu = SubmenuBuilder::new(app, "Help")
-        .item(&MenuItemBuilder::with_id("documentation", "Documentation").build(app)?)
+        .item(&MenuItemBuilder::with_id("homepage", "Homepage").build(app)?)
         .item(&MenuItemBuilder::with_id("report_issue", "Report Issue...").build(app)?)
         .build()?;
 
@@ -191,50 +193,59 @@ pub fn run() {
             app.on_menu_event(|app, event| {
                 let id = event.id().as_ref();
 
-                // Helper to emit to focused window only (for window-specific actions)
-                let emit_to_focused = |event_name: &str, payload: &str| {
-                    // Find the focused editor window
-                    for (label, window) in app.webview_windows() {
-                        if label.starts_with("editor-") && window.is_focused().unwrap_or(false) {
-                            let _ = window.emit(event_name, payload);
+                // Helper to emit to editor windows - tries focused first, falls back to all
+                let emit_to_editors = |event_name: &str, payload: Option<&str>| {
+                    let windows: Vec<_> = app.webview_windows()
+                        .into_iter()
+                        .filter(|(label, _)| label.starts_with("editor-"))
+                        .collect();
+
+                    // Try focused window first
+                    for (_, window) in &windows {
+                        if window.is_focused().unwrap_or(false) {
+                            if let Some(p) = payload {
+                                let _ = window.emit(event_name, p);
+                            } else {
+                                let _ = window.emit(event_name, ());
+                            }
                             return;
                         }
                     }
-                };
 
-                let emit_to_focused_empty = |event_name: &str| {
-                    for (label, window) in app.webview_windows() {
-                        if label.starts_with("editor-") && window.is_focused().unwrap_or(false) {
+                    // Fallback: emit to all editor windows (only one should be active)
+                    for (_, window) in &windows {
+                        if let Some(p) = payload {
+                            let _ = window.emit(event_name, p);
+                        } else {
                             let _ = window.emit(event_name, ());
-                            return;
                         }
                     }
                 };
 
                 match id {
-                    // These create new windows, so broadcast to focused window
-                    "new_web" => emit_to_focused("menu:new-template", "web"),
-                    "new_react" => emit_to_focused("menu:new-template", "web-react"),
-                    "new_node" => emit_to_focused("menu:new-template", "node"),
-                    "new_python" => emit_to_focused("menu:new-template", "python"),
-                    "new_rust" => emit_to_focused("menu:new-template", "rust"),
-                    "new_java" => emit_to_focused("menu:new-template", "java"),
+                    // These create new windows, so broadcast to editor windows
+                    "new_web" => emit_to_editors("menu:new-template", Some("web")),
+                    "new_react" => emit_to_editors("menu:new-template", Some("web-react")),
+                    "new_node" => emit_to_editors("menu:new-template", Some("node")),
+                    "new_python" => emit_to_editors("menu:new-template", Some("python")),
+                    "new_rust" => emit_to_editors("menu:new-template", Some("rust")),
+                    "new_java" => emit_to_editors("menu:new-template", Some("java")),
 
-                    // Window-specific actions - emit only to focused window
-                    "open" => emit_to_focused_empty("menu:open"),
-                    "save" => emit_to_focused_empty("menu:save"),
-                    "save_as" => emit_to_focused_empty("menu:save-as"),
-                    "toggle_preview" => emit_to_focused_empty("menu:toggle-preview"),
-                    "toggle_output" => emit_to_focused_empty("menu:toggle-output"),
-                    "run_code" => emit_to_focused_empty("menu:run-code"),
-                    "stop_code" => emit_to_focused_empty("menu:stop-code"),
+                    // Window-specific actions - emit to editor windows
+                    "open" => emit_to_editors("menu:open", None),
+                    "save" => emit_to_editors("menu:save", None),
+                    "save_as" => emit_to_editors("menu:save-as", None),
+                    "toggle_preview" => emit_to_editors("menu:toggle-preview", None),
+                    "toggle_output" => emit_to_editors("menu:toggle-output", None),
+                    "run_code" => emit_to_editors("menu:run-code", None),
+                    "stop_code" => emit_to_editors("menu:stop-code", None),
 
-                    // Global actions - can broadcast to all
-                    "documentation" => {
-                        let _ = app.emit("menu:documentation", ());
+                    // Help menu actions
+                    "homepage" => {
+                        let _ = app.shell().open("https://codecells.app", None);
                     }
                     "report_issue" => {
-                        let _ = app.emit("menu:report-issue", ());
+                        let _ = app.shell().open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", None);
                     }
                     "about" => {
                         let _ = app.emit("menu:about", ());

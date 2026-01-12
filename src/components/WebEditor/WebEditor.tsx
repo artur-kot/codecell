@@ -117,14 +117,6 @@ export function WebEditor() {
       setShowAbout(true);
     });
 
-    const unlistenReportIssue = listen("menu:report-issue", () => {
-      window.open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", "_blank");
-    });
-
-    const unlistenDocumentation = listen("menu:documentation", () => {
-      window.open("https://github.com/arturkot/codecell", "_blank");
-    });
-
     const unlistenNewTemplate = listen<string>("menu:new-template", (event) => {
       handleNewFromTemplate(event.payload);
     });
@@ -154,8 +146,6 @@ export function WebEditor() {
       unlistenSave.then((fn) => fn());
       unlistenSaveAs.then((fn) => fn());
       unlistenAbout.then((fn) => fn());
-      unlistenReportIssue.then((fn) => fn());
-      unlistenDocumentation.then((fn) => fn());
       unlistenNewTemplate.then((fn) => fn());
       unlistenOpenRecent.then((fn) => fn());
     };

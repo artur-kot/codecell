@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::menu::MenuItemKind;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -85,9 +86,31 @@ pub async fn kill_window_processes(
 }
 
 fn update_stop_menu_state(app: &AppHandle, window_id: &str, enabled: bool) {
-    // Emit event to frontend to update UI state
+    // Update the Stop menu item's enabled state
     if let Some(window) = app.get_webview_window(window_id) {
+        // Emit event to frontend to update UI state
         let _ = window.emit("execution:state-changed", enabled);
+
+        // Update the actual menu item
+        if let Some(menu) = window.menu() {
+            // Find and update the stop_code menu item
+            if let Some(items) = menu.items().ok() {
+                for item in items {
+                    if let MenuItemKind::Submenu(submenu) = item {
+                        if let Ok(sub_items) = submenu.items() {
+                            for sub_item in sub_items {
+                                if let MenuItemKind::MenuItem(menu_item) = sub_item {
+                                    if menu_item.id().0 == "stop_code" {
+                                        let _ = menu_item.set_enabled(enabled);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
