@@ -7,12 +7,14 @@ use services::ProjectManager;
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
-    Emitter, Manager,
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
 fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+    let about_codecell = MenuItemBuilder::with_id("about", "About CodeCell").build(app)?;
+
     let app_menu = SubmenuBuilder::new(app, "CodeCell")
-        .item(&PredefinedMenuItem::about(app, Some("About CodeCell"), None)?)
+        .item(&about_codecell)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()
@@ -23,7 +25,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
-    let new_project = MenuItemBuilder::with_id("new_project", "New Project...")
+    let new_note = MenuItemBuilder::with_id("new_note", "New Note...")
         .accelerator("CmdOrCtrl+N")
         .build(app)?;
 
@@ -54,13 +56,12 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         .build(app)?;
 
     let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&new_project)
+        .item(&new_note)
         .item(&new_from_template)
         .item(&open)
         .separator()
         .item(&save)
         .item(&save_as)
-        .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
@@ -95,7 +96,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 
     let help_menu = SubmenuBuilder::new(app, "Help")
         .item(&MenuItemBuilder::with_id("documentation", "Documentation").build(app)?)
-        .item(&MenuItemBuilder::with_id("report_issue", "Report Issue").build(app)?)
+        .item(&MenuItemBuilder::with_id("report_issue", "Report Issue...").build(app)?)
         .build()?;
 
     let menu = Menu::with_items(
@@ -138,16 +139,21 @@ pub fn run() {
             app.manage(state);
             app.manage(RunningProcesses::new());
 
-            // Build native menu
+            // Build native menu (for editor windows)
             let menu = build_menu(app)?;
-            app.set_menu(menu)?;
+            app.set_menu(menu.clone())?;
+
+            // Hide menu on launcher window
+            if let Some(launcher) = app.get_webview_window("launcher") {
+                let _ = launcher.remove_menu();
+            }
 
             // Handle menu events
             app.on_menu_event(|app, event| {
                 let id = event.id().as_ref();
                 match id {
-                    "new_project" => {
-                        let _ = app.emit("menu:new-project", ());
+                    "new_note" => {
+                        let _ = app.emit("menu:new-note", ());
                     }
                     "new_web" => {
                         let _ = app.emit("menu:new-template", "web");
@@ -188,6 +194,15 @@ pub fn run() {
                     "stop_code" => {
                         let _ = app.emit("menu:stop-code", ());
                     }
+                    "documentation" => {
+                        let _ = app.emit("menu:documentation", ());
+                    }
+                    "report_issue" => {
+                        let _ = app.emit("menu:report-issue", ());
+                    }
+                    "about" => {
+                        let _ = app.emit("menu:about", ());
+                    }
                     _ => {}
                 }
             });
@@ -220,6 +235,41 @@ pub fn run() {
             commands::execute_typescript,
             commands::get_system_fonts,
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                let label = window.label();
+                let app = window.app_handle();
+
+                // Check if this is an editor window
+                if label.starts_with("editor-") {
+                    // Count remaining editor windows (excluding this one being closed)
+                    let editor_count = app
+                        .webview_windows()
+                        .keys()
+                        .filter(|l| l.starts_with("editor-") && *l != label)
+                        .count();
+
+                    // If no other editors remain, recreate launcher
+                    if editor_count == 0 {
+                        if let Ok(launcher) = WebviewWindowBuilder::new(
+                            app,
+                            "launcher",
+                            WebviewUrl::App("/".into()),
+                        )
+                        .title("CodeCell")
+                        .inner_size(900.0, 600.0)
+                        .min_inner_size(700.0, 500.0)
+                        .resizable(true)
+                        .center()
+                        .build()
+                        {
+                            // Hide menu on launcher
+                            let _ = launcher.remove_menu();
+                        }
+                    }
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

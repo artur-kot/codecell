@@ -25,6 +25,7 @@
     "@lezer/highlight": "^1.2.3",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.5.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "esbuild-wasm": "^0.27.2",
     "lucide-react": "^0.562.0",

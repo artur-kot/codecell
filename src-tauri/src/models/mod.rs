@@ -36,6 +36,7 @@ pub struct Project {
     pub files: Vec<ProjectFile>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing)]
     pub saved_path: Option<String>,
 }
 

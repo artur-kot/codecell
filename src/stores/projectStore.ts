@@ -1,10 +1,14 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import type { Project, ProjectFile, RecentProject, QuickTemplate, TemplateType, WebTemplateConfig } from "@/types";
 
 interface ProjectState {
   currentProject: Project | null;
   recentProjects: RecentProject[];
   quickTemplates: QuickTemplate[];
+  isDirty: boolean;
+  lastSavedAt: string | null;
 
   // Actions
   setCurrentProject: (project: Project | null) => void;
@@ -13,6 +17,10 @@ interface ProjectState {
   loadRecentProjects: () => Promise<void>;
   loadQuickTemplates: () => Promise<void>;
   createProject: (template: TemplateType, config?: WebTemplateConfig) => Project;
+  saveProject: () => Promise<boolean>;
+  saveProjectAs: () => Promise<boolean>;
+  openProject: () => Promise<boolean>;
+  markClean: () => void;
 }
 
 const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [
@@ -236,8 +244,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProject: null,
   recentProjects: [],
   quickTemplates: DEFAULT_QUICK_TEMPLATES,
+  isDirty: false,
+  lastSavedAt: null,
 
-  setCurrentProject: (project) => set({ currentProject: project }),
+  setCurrentProject: (project) => set({ currentProject: project, isDirty: false }),
 
   updateFile: (fileName, content) => {
     const { currentProject } = get();
@@ -253,7 +263,115 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         files: updatedFiles,
         updatedAt: new Date().toISOString(),
       },
+      isDirty: true,
     });
+  },
+
+  markClean: () => set({ isDirty: false, lastSavedAt: new Date().toISOString() }),
+
+  saveProject: async () => {
+    const { currentProject, saveProjectAs, markClean } = get();
+    if (!currentProject) return false;
+
+    // If no saved path, use Save As
+    if (!currentProject.savedPath) {
+      return saveProjectAs();
+    }
+
+    try {
+      await invoke("save_project_to_path", {
+        project: currentProject,
+        path: currentProject.savedPath,
+      });
+      markClean();
+      return true;
+    } catch (error) {
+      console.error("Failed to save project:", error);
+      return false;
+    }
+  },
+
+  saveProjectAs: async () => {
+    const { currentProject, markClean } = get();
+    if (!currentProject) return false;
+
+    try {
+      const path = await save({
+        defaultPath: `${currentProject.name}.codecell`,
+        filters: [{ name: "CodeCell Project", extensions: ["codecell"] }],
+      });
+
+      if (!path) return false;
+
+      // Update project with new path and name
+      const fileName = path.split(/[/\\]/).pop() || currentProject.name;
+      const projectName = fileName.replace(/\.codecell$/, "");
+
+      const updatedProject = {
+        ...currentProject,
+        name: projectName,
+        savedPath: path,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await invoke("save_project_to_path", {
+        project: updatedProject,
+        path,
+      });
+
+      set({ currentProject: updatedProject });
+      markClean();
+
+      // Add to recent projects
+      await invoke("add_recent_project", {
+        project: {
+          id: updatedProject.id,
+          name: updatedProject.name,
+          template: updatedProject.template,
+          path,
+          updatedAt: updatedProject.updatedAt,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      console.error("Failed to save project:", error);
+      return false;
+    }
+  },
+
+  openProject: async () => {
+    try {
+      const path = await open({
+        filters: [{ name: "CodeCell Project", extensions: ["codecell"] }],
+        multiple: false,
+      });
+
+      if (!path || Array.isArray(path)) return false;
+
+      const project = await invoke<Project>("load_project_from_path", { path });
+
+      // Ensure savedPath is set
+      project.savedPath = path;
+
+      set({ currentProject: project, isDirty: false });
+
+      // Add to recent projects
+      await invoke("add_recent_project", {
+        project: {
+          id: project.id,
+          name: project.name,
+          template: project.template,
+          path,
+          updatedAt: project.updatedAt,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      console.error("Failed to open project:", error);
+      return false;
+    }
   },
 
   addRecentProject: (project) => {

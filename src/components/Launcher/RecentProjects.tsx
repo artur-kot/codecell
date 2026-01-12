@@ -58,9 +58,9 @@ export function RecentProjects({ onOpen }: RecentProjectsProps) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-border-subtle bg-surface-0/20 p-8">
         <FolderOpen className="mb-3 h-10 w-10 text-text-subtle" strokeWidth={1} />
-        <p className="mb-1 font-mono text-sm text-text-muted">No recent projects</p>
+        <p className="mb-1 font-mono text-sm text-text-muted">No recent notes</p>
         <p className="text-center font-mono text-xs text-text-subtle">
-          Create a new project or open<br />an existing one to get started
+          Create a new note or open<br />an existing one to get started
         </p>
       </div>
     );

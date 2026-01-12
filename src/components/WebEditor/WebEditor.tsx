@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Settings } from "@/components/Settings";
+import { About } from "@/components/About";
 import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -39,6 +40,7 @@ export function WebEditor() {
   const [previewKey, setPreviewKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const commandPalette = useCommandPalette();
@@ -65,6 +67,9 @@ export function WebEditor() {
     loadProject();
   }, [currentProject, setCurrentProject]);
 
+  // Get save functions from store
+  const { saveProject, saveProjectAs, isDirty } = useProjectStore();
+
   // Listen for menu events
   useEffect(() => {
     const unlistenTogglePreview = listen("menu:toggle-preview", () => {
@@ -72,15 +77,45 @@ export function WebEditor() {
     });
 
     const unlistenSave = listen("menu:save", () => {
-      // TODO: Implement save
-      console.log("Save triggered");
+      saveProject();
+    });
+
+    const unlistenSaveAs = listen("menu:save-as", () => {
+      saveProjectAs();
+    });
+
+    const unlistenAbout = listen("menu:about", () => {
+      setShowAbout(true);
+    });
+
+    const unlistenReportIssue = listen("menu:report-issue", () => {
+      window.open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", "_blank");
+    });
+
+    const unlistenDocumentation = listen("menu:documentation", () => {
+      window.open("https://github.com/arturkot/codecell", "_blank");
     });
 
     return () => {
       unlistenTogglePreview.then((fn) => fn());
       unlistenSave.then((fn) => fn());
+      unlistenSaveAs.then((fn) => fn());
+      unlistenAbout.then((fn) => fn());
+      unlistenReportIssue.then((fn) => fn());
+      unlistenDocumentation.then((fn) => fn());
     };
-  }, []);
+  }, [saveProject, saveProjectAs]);
+
+  // Autosave every 30 seconds when dirty
+  useEffect(() => {
+    if (!isDirty || !currentProject?.savedPath) return;
+
+    const autosaveTimer = setInterval(() => {
+      saveProject();
+    }, 30000);
+
+    return () => clearInterval(autosaveTimer);
+  }, [isDirty, currentProject?.savedPath, saveProject]);
 
   // Debounced preview refresh
   const refreshPreview = useCallback(() => {
@@ -188,7 +223,7 @@ export function WebEditor() {
       <div className="flex h-screen items-center justify-center bg-base">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-accent" />
-          <p className="font-mono text-sm text-text-muted">Loading project...</p>
+          <p className="font-mono text-sm text-text-muted">Loading note...</p>
         </div>
       </div>
     );
@@ -377,6 +412,9 @@ export function WebEditor() {
 
       {/* Settings Modal */}
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* About Modal */}
+      <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
 
       {/* Command Palette */}
       <CommandPalette

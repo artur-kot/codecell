@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Settings } from "@/components/Settings";
+import { About } from "@/components/About";
 import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -63,13 +64,14 @@ const LANGUAGE_CONFIG: Record<
 };
 
 export function CompiledEditor() {
-  const { currentProject, setCurrentProject, updateFile } = useProjectStore();
+  const { currentProject, setCurrentProject, updateFile, saveProject, saveProjectAs, isDirty } = useProjectStore();
   const { setThemeMode } = useSettingsStore();
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [showOutput, setShowOutput] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const commandPalette = useCommandPalette();
   const outputHeight = 200;
 
@@ -107,11 +109,47 @@ export function CompiledEditor() {
       setShowOutput((prev) => !prev);
     });
 
+    const unlistenSave = listen("menu:save", () => {
+      saveProject();
+    });
+
+    const unlistenSaveAs = listen("menu:save-as", () => {
+      saveProjectAs();
+    });
+
+    const unlistenAbout = listen("menu:about", () => {
+      setShowAbout(true);
+    });
+
+    const unlistenReportIssue = listen("menu:report-issue", () => {
+      window.open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", "_blank");
+    });
+
+    const unlistenDocumentation = listen("menu:documentation", () => {
+      window.open("https://github.com/arturkot/codecell", "_blank");
+    });
+
     return () => {
       unlistenRun.then((fn) => fn());
       unlistenToggleOutput.then((fn) => fn());
+      unlistenSave.then((fn) => fn());
+      unlistenSaveAs.then((fn) => fn());
+      unlistenAbout.then((fn) => fn());
+      unlistenReportIssue.then((fn) => fn());
+      unlistenDocumentation.then((fn) => fn());
     };
-  }, [currentProject]);
+  }, [currentProject, saveProject, saveProjectAs]);
+
+  // Autosave every 30 seconds when dirty
+  useEffect(() => {
+    if (!isDirty || !currentProject?.savedPath) return;
+
+    const autosaveTimer = setInterval(() => {
+      saveProject();
+    }, 30000);
+
+    return () => clearInterval(autosaveTimer);
+  }, [isDirty, currentProject?.savedPath, saveProject]);
 
   const handleRun = useCallback(async () => {
     if (!currentProject || isRunning) return;
@@ -225,7 +263,7 @@ export function CompiledEditor() {
       <div className="flex h-screen items-center justify-center bg-base">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-accent" />
-          <p className="font-mono text-sm text-text-muted">Loading project...</p>
+          <p className="font-mono text-sm text-text-muted">Loading note...</p>
         </div>
       </div>
     );
@@ -429,6 +467,9 @@ export function CompiledEditor() {
 
       {/* Settings Modal */}
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* About Modal */}
+      <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
 
       {/* Command Palette */}
       <CommandPalette

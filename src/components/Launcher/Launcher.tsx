@@ -4,20 +4,44 @@ import { QuickTemplates } from "./QuickTemplates";
 import { RecentProjects } from "./RecentProjects";
 import { ThemeToggle } from "@/components/common";
 import { Settings } from "@/components/Settings";
+import { About } from "@/components/About";
 import { Plus, Hexagon, Settings as SettingsIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import type { TemplateType, WebTemplateConfig } from "@/types";
 
 export function Launcher() {
   const { loadRecentProjects, loadQuickTemplates, createProject } =
     useProjectStore();
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   useEffect(() => {
     loadRecentProjects();
     loadQuickTemplates();
   }, [loadRecentProjects, loadQuickTemplates]);
+
+  // Listen for menu events
+  useEffect(() => {
+    const unlistenAbout = listen("menu:about", () => {
+      setShowAbout(true);
+    });
+
+    const unlistenReportIssue = listen("menu:report-issue", () => {
+      window.open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", "_blank");
+    });
+
+    const unlistenDocumentation = listen("menu:documentation", () => {
+      window.open("https://github.com/arturkot/codecell", "_blank");
+    });
+
+    return () => {
+      unlistenAbout.then((fn) => fn());
+      unlistenReportIssue.then((fn) => fn());
+      unlistenDocumentation.then((fn) => fn());
+    };
+  }, []);
 
   const handleCreateProject = async (
     template: TemplateType,
@@ -34,7 +58,7 @@ export function Launcher() {
       templateType: template,
     });
 
-    // Close launcher window
+    // Close launcher window (it will be recreated when all editors close)
     await getCurrentWindow().close();
   };
 
@@ -71,7 +95,7 @@ export function Launcher() {
 
         {/* Main content */}
         <main className="flex flex-1 gap-10 overflow-hidden">
-          {/* Left column - Recent Projects */}
+          {/* Left column - Recent Notes */}
           <section className="flex w-72 flex-shrink-0 flex-col animate-fade-in stagger-1">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-mono text-sm font-medium uppercase tracking-wider text-text-muted">
@@ -126,6 +150,9 @@ export function Launcher() {
 
       {/* Settings Modal */}
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* About Modal */}
+      <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
     </div>
   );
 }
