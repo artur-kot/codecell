@@ -1,0 +1,6 @@
+npx lint-staged
+
+# Check Rust formatting (if Rust files changed)
+if git diff --cached --name-only | grep -q "src-tauri/src/"; then
+  cd src-tauri && cargo fmt --check
+fi

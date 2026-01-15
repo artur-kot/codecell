@@ -8,8 +8,8 @@ import {
   Cog,
   Coffee,
   FileCode,
+  type LucideIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 interface QuickTemplatesProps {
   onCreate: (template: TemplateType, config?: WebTemplateConfig) => void;
@@ -83,9 +83,7 @@ export function QuickTemplates({ onCreate }: QuickTemplatesProps) {
             </div>
 
             {/* Name */}
-            <h3 className="mb-1 font-mono text-sm font-medium text-text">
-              {template.name}
-            </h3>
+            <h3 className="mb-1 font-mono text-sm font-medium text-text">{template.name}</h3>
 
             {/* Description */}
             <p className="font-mono text-xs text-text-muted">{description}</p>

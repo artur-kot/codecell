@@ -11,8 +11,8 @@ import {
   FileCode,
   FolderOpen,
   Clock,
+  type LucideIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 const TEMPLATE_ICONS: Record<TemplateType, LucideIcon> = {
   web: Globe,
@@ -83,7 +83,9 @@ export function RecentProjects() {
         <FolderOpen className="mb-3 h-10 w-10 text-text-subtle" strokeWidth={1} />
         <p className="mb-1 font-mono text-sm text-text-muted">No recent notes</p>
         <p className="text-center font-mono text-xs text-text-subtle">
-          Create a new note or open<br />an existing one to get started
+          Create a new note or open
+          <br />
+          an existing one to get started
         </p>
       </div>
     );
@@ -108,23 +110,15 @@ export function RecentProjects() {
                 backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
               }}
             >
-              <Icon
-                className="h-4 w-4"
-                style={{ color }}
-                strokeWidth={1.5}
-              />
+              <Icon className="h-4 w-4" style={{ color }} strokeWidth={1.5} />
             </div>
 
             {/* Info */}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-sm font-medium text-text">
-                {project.name}
-              </p>
+              <p className="truncate font-mono text-sm font-medium text-text">{project.name}</p>
               <div className="flex items-center gap-2 text-text-subtle">
                 <Clock className="h-3 w-3" />
-                <span className="font-mono text-xs">
-                  {formatRelativeTime(project.updatedAt)}
-                </span>
+                <span className="font-mono text-xs">{formatRelativeTime(project.updatedAt)}</span>
               </div>
             </div>
 

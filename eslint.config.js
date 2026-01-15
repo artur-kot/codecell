@@ -22,10 +22,27 @@ export default tseslint.config(
         "warn",
         { allowConstantExport: true },
       ],
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_" },
-      ],
+
+      // === COMPLEXITY LIMITS (Prevent Spaghetti Code) ===
+      complexity: ["warn", 10],
+      "max-lines": ["warn", { max: 300, skipBlankLines: true, skipComments: true }],
+      "max-lines-per-function": ["warn", { max: 80, skipBlankLines: true, skipComments: true }],
+      "max-nested-callbacks": ["warn", 3],
+      "max-depth": ["warn", 4],
+      "max-params": ["warn", 4],
+
+      // === CODE QUALITY ===
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-duplicate-imports": "error",
+      "no-else-return": "warn",
+      "prefer-const": "error",
+      "no-var": "error",
+      eqeqeq: ["error", "always"],
+
+      // === TYPESCRIPT SPECIFIC ===
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/consistent-type-imports": "warn",
     },
   }
 );

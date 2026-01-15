@@ -1,6 +1,12 @@
 import { useEffect, useRef, useCallback } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+} from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, bracketMatching, HighlightStyle } from "@codemirror/language";
 import { html } from "@codemirror/lang-html";
@@ -169,8 +175,10 @@ export function CodeEditor({ value, language, onChange, readOnly = false }: Code
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const editorSettings = useSettingsStore((state) => state.editorSettings);
 
-  // Keep onChange ref updated
-  onChangeRef.current = onChange;
+  // Keep onChange ref updated (in effect to avoid updating during render)
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   const getLanguageExtension = useCallback(() => {
     const langFn = languageExtensions[language];
@@ -238,10 +246,5 @@ export function CodeEditor({ value, language, onChange, readOnly = false }: Code
     }
   }, [value]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="h-full w-full overflow-hidden"
-    />
-  );
+  return <div ref={containerRef} className="h-full w-full overflow-hidden" />;
 }

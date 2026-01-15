@@ -31,7 +31,12 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
 
     let new_from_template = SubmenuBuilder::new(app, "New from Template")
         .items(&[
-            &new_web, &new_react, &new_node, &new_python, &new_rust, &new_java,
+            &new_web,
+            &new_react,
+            &new_node,
+            &new_python,
+            &new_rust,
+            &new_java,
         ])
         .build()?;
 
@@ -54,10 +59,9 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
                         builder = builder.item(&no_recent);
                     } else {
                         for (i, project) in recent.iter().take(10).enumerate() {
-                            let item = MenuItemBuilder::with_id(
-                                &format!("recent_{}", i),
-                                &project.name,
-                            ).build(app)?;
+                            let item =
+                                MenuItemBuilder::with_id(&format!("recent_{}", i), &project.name)
+                                    .build(app)?;
                             builder = builder.item(&item);
                         }
                     }
@@ -146,9 +150,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
 
     let menu = Menu::with_items(
         app,
-        &[
-            &app_menu, &file_menu, &view_menu, &run_menu, &help_menu,
-        ],
+        &[&app_menu, &file_menu, &view_menu, &run_menu, &help_menu],
     )?;
 
     Ok(menu)
@@ -195,7 +197,8 @@ pub fn run() {
 
                 // Helper to emit to editor windows - tries focused first, falls back to all
                 let emit_to_editors = |event_name: &str, payload: Option<&str>| {
-                    let windows: Vec<_> = app.webview_windows()
+                    let windows: Vec<_> = app
+                        .webview_windows()
                         .into_iter()
                         .filter(|(label, _)| label.starts_with("editor-"))
                         .collect();
@@ -245,7 +248,10 @@ pub fn run() {
                         let _ = app.shell().open("https://codecells.app", None);
                     }
                     "report_issue" => {
-                        let _ = app.shell().open("mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback", None);
+                        let _ = app.shell().open(
+                            "mailto:artur.kot@outlook.com?subject=CodeCell%20Feedback",
+                            None,
+                        );
                     }
                     "about" => {
                         let _ = app.emit("menu:about", ());
@@ -253,19 +259,23 @@ pub fn run() {
                     _ => {
                         // Handle recent notes menu items (recent_0, recent_1, etc.)
                         if id.starts_with("recent_") {
-                            if let Ok(index) = id.strip_prefix("recent_").unwrap().parse::<usize>() {
+                            if let Ok(index) = id.strip_prefix("recent_").unwrap().parse::<usize>()
+                            {
                                 if let Some(state) = app.try_state::<AppState>() {
                                     if let Ok(manager) = state.project_manager.lock() {
                                         if let Ok(recent) = manager.get_recent_projects() {
                                             if let Some(project) = recent.get(index) {
                                                 // Check if window for this project is already open
                                                 let window_label = format!("editor-{}", project.id);
-                                                if let Some(window) = app.get_webview_window(&window_label) {
+                                                if let Some(window) =
+                                                    app.get_webview_window(&window_label)
+                                                {
                                                     // Window exists, focus it
                                                     let _ = window.set_focus();
                                                 } else {
                                                     // Window doesn't exist, emit to open it
-                                                    let _ = app.emit("menu:open-recent", &project.path);
+                                                    let _ =
+                                                        app.emit("menu:open-recent", &project.path);
                                                 }
                                             }
                                         }
@@ -333,17 +343,14 @@ pub fn run() {
 
                     // If no other editors remain, recreate launcher
                     if editor_count == 0 {
-                        if let Ok(launcher) = WebviewWindowBuilder::new(
-                            &app,
-                            "launcher",
-                            WebviewUrl::App("/".into()),
-                        )
-                        .title("CodeCell")
-                        .inner_size(900.0, 600.0)
-                        .min_inner_size(700.0, 500.0)
-                        .resizable(true)
-                        .center()
-                        .build()
+                        if let Ok(launcher) =
+                            WebviewWindowBuilder::new(&app, "launcher", WebviewUrl::App("/".into()))
+                                .title("CodeCell")
+                                .inner_size(900.0, 600.0)
+                                .min_inner_size(700.0, 500.0)
+                                .resizable(true)
+                                .center()
+                                .build()
                         {
                             // Hide menu on launcher
                             let _ = launcher.remove_menu();

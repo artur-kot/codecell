@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { Settings } from "@/components/Settings";
 import { About } from "@/components/About";
-import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
+import {
+  CommandPalette,
+  useCommandPalette,
+  type PaletteCommand,
+} from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { CodeEditor } from "@/components/common";
 import {
   FileCode,
@@ -14,17 +17,10 @@ import {
   Minimize2,
   Loader2,
   Settings as SettingsIcon,
-  Sun,
-  Moon,
-  Monitor,
   Code,
 } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-import type { Project } from "@/types";
-import { TEMPLATE_MAP } from "@/types";
+import { useProjectLoader, useAutosave, useMenuEvents, useThemeCommands } from "@/hooks";
 
-// File tab icons and colors
 const FILE_CONFIG: Record<string, { icon: string; color: string }> = {
   html: { icon: "HTML", color: "var(--color-template-web)" },
   css: { icon: "CSS", color: "var(--color-accent)" },
@@ -33,131 +29,31 @@ const FILE_CONFIG: Record<string, { icon: string; color: string }> = {
 };
 
 export function WebEditor() {
-  const { currentProject, setCurrentProject, updateFile } = useProjectStore();
-  const { setThemeMode } = useSettingsStore();
+  const { currentProject, updateFile } = useProjectStore();
   const [activeTab, setActiveTab] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const commandPalette = useCommandPalette();
 
-  // Load project from temp storage on mount
-  useEffect(() => {
-    const loadProject = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const projectId = params.get("projectId");
-
-      if (projectId && !currentProject) {
-        try {
-          const project = await invoke<Project>("load_temp_project", {
-            id: projectId,
-          });
-          setCurrentProject(project);
-        } catch (error) {
-          console.error("Failed to load project:", error);
-        }
-      }
-      setIsLoading(false);
-    };
-
-    loadProject();
-  }, [currentProject, setCurrentProject]);
-
-  // Get save functions from store
-  const { saveProject, saveProjectAs, isDirty, createProjectWithoutSettingCurrent } = useProjectStore();
-
-  // Handle creating new project from template
-  const handleNewFromTemplate = useCallback(async (templateId: string) => {
-    const template = TEMPLATE_MAP[templateId];
-    if (!template) return;
-
-    const project = createProjectWithoutSettingCurrent(template.type, template.config);
-    await invoke("save_temp_project", { project });
-    await invoke("open_editor_window", {
-      projectId: project.id,
-      templateType: template.type,
-    });
-  }, [createProjectWithoutSettingCurrent]);
-
-  // Listen for menu events
-  useEffect(() => {
-    const unlistenTogglePreview = listen("menu:toggle-preview", () => {
-      setShowPreview((prev) => !prev);
-    });
-
-    const unlistenSave = listen("menu:save", () => {
-      saveProject();
-    });
-
-    const unlistenSaveAs = listen("menu:save-as", () => {
-      saveProjectAs();
-    });
-
-    const unlistenAbout = listen("menu:about", () => {
-      setShowAbout(true);
-    });
-
-    const unlistenNewTemplate = listen<string>("menu:new-template", (event) => {
-      handleNewFromTemplate(event.payload);
-    });
-
-    const unlistenOpenRecent = listen<string>("menu:open-recent", async (event) => {
-      const path = event.payload;
-      try {
-        // Load the project from the path
-        const project = await invoke<Project>("load_project_from_path", { path });
-        project.savedPath = path;
-
-        // Save to temp storage
-        await invoke("save_temp_project", { project });
-
-        // Open new editor window
-        await invoke("open_editor_window", {
-          projectId: project.id,
-          templateType: project.template,
-        });
-      } catch (error) {
-        console.error("Failed to open recent project:", error);
-      }
-    });
-
-    return () => {
-      unlistenTogglePreview.then((fn) => fn());
-      unlistenSave.then((fn) => fn());
-      unlistenSaveAs.then((fn) => fn());
-      unlistenAbout.then((fn) => fn());
-      unlistenNewTemplate.then((fn) => fn());
-      unlistenOpenRecent.then((fn) => fn());
-    };
-  }, [saveProject, saveProjectAs, handleNewFromTemplate]);
-
-  // Autosave every 30 seconds when dirty
-  useEffect(() => {
-    if (!isDirty || !currentProject?.savedPath) return;
-
-    const autosaveTimer = setInterval(() => {
-      saveProject();
-    }, 30000);
-
-    return () => clearInterval(autosaveTimer);
-  }, [isDirty, currentProject?.savedPath, saveProject]);
+  // Use shared hooks
+  const { isLoading } = useProjectLoader("web");
+  useAutosave();
+  useMenuEvents({
+    onTogglePreview: () => setShowPreview((prev) => !prev),
+    onAbout: () => setShowAbout(true),
+  });
 
   // Debounced preview refresh
   const refreshPreview = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      setPreviewKey((k) => k + 1);
-    }, 500);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => setPreviewKey((k) => k + 1), 500);
   }, []);
 
-  // Handle file content changes
   const handleContentChange = useCallback(
     (content: string) => {
       if (!currentProject) return;
@@ -170,10 +66,12 @@ export function WebEditor() {
     [currentProject, activeTab, updateFile, refreshPreview]
   );
 
+  // Theme commands from shared hook
+  const themeCommands = useThemeCommands({ onOpenSettings: () => setShowSettings(true) });
+
   // Command palette commands
   const commands: PaletteCommand[] = useMemo(
     () => [
-      // View commands
       {
         id: "toggle-preview",
         label: showPreview ? "Hide Preview" : "Show Preview",
@@ -187,7 +85,11 @@ export function WebEditor() {
         id: "toggle-fullscreen",
         label: isPreviewFullscreen ? "Exit Fullscreen Preview" : "Fullscreen Preview",
         description: "Toggle fullscreen mode for preview",
-        icon: isPreviewFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />,
+        icon: isPreviewFullscreen ? (
+          <Minimize2 className="h-4 w-4" />
+        ) : (
+          <Maximize2 className="h-4 w-4" />
+        ),
         action: () => setIsPreviewFullscreen(!isPreviewFullscreen),
         category: "View",
       },
@@ -200,7 +102,6 @@ export function WebEditor() {
         action: () => setPreviewKey((k) => k + 1),
         category: "View",
       },
-      // File commands
       ...(currentProject?.files.map((file, index) => ({
         id: `switch-to-${file.name}`,
         label: `Switch to ${file.name}`,
@@ -209,43 +110,9 @@ export function WebEditor() {
         action: () => setActiveTab(index),
         category: "Files",
       })) || []),
-      // Theme commands
-      {
-        id: "theme-light",
-        label: "Light Theme",
-        description: "Switch to Catppuccin Latte",
-        icon: <Sun className="h-4 w-4" />,
-        action: () => setThemeMode("light"),
-        category: "Theme",
-      },
-      {
-        id: "theme-dark",
-        label: "Dark Theme",
-        description: "Switch to Catppuccin Mocha",
-        icon: <Moon className="h-4 w-4" />,
-        action: () => setThemeMode("dark"),
-        category: "Theme",
-      },
-      {
-        id: "theme-system",
-        label: "System Theme",
-        description: "Follow system preference",
-        icon: <Monitor className="h-4 w-4" />,
-        action: () => setThemeMode("system"),
-        category: "Theme",
-      },
-      // Settings
-      {
-        id: "open-settings",
-        label: "Open Settings",
-        description: "Configure editor preferences",
-        shortcut: "Ctrl+,",
-        icon: <SettingsIcon className="h-4 w-4" />,
-        action: () => setShowSettings(true),
-        category: "Settings",
-      },
+      ...themeCommands,
     ],
-    [showPreview, isPreviewFullscreen, currentProject?.files, setThemeMode]
+    [showPreview, isPreviewFullscreen, currentProject?.files, themeCommands]
   );
 
   if (isLoading || !currentProject) {
@@ -264,56 +131,14 @@ export function WebEditor() {
 
   return (
     <div className="flex h-screen flex-col bg-crust">
-      {/* Header toolbar */}
-      <header className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
-        <div className="flex items-center gap-3">
-          <FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />
-          <span className="font-mono text-sm font-medium text-text">
-            {currentProject.name}
-          </span>
-          <span className="rounded bg-surface-0 px-2 py-0.5 font-mono text-xs text-text-muted">
-            Web
-          </span>
-        </div>
+      <WebEditorHeader
+        projectName={currentProject.name}
+        showPreview={showPreview}
+        onTogglePreview={() => setShowPreview(!showPreview)}
+        onRefreshPreview={() => setPreviewKey((k) => k + 1)}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
-              showPreview
-                ? "bg-accent/10 text-accent"
-                : "text-text-muted hover:bg-surface-0 hover:text-text"
-            }`}
-          >
-            {showPreview ? (
-              <Eye className="h-3.5 w-3.5" />
-            ) : (
-              <EyeOff className="h-3.5 w-3.5" />
-            )}
-            Preview
-          </button>
-
-          <button
-            onClick={() => setPreviewKey((k) => k + 1)}
-            className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-            title="Refresh preview"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </button>
-
-          <div className="mx-2 h-4 w-px bg-border" />
-
-          <button
-            onClick={() => setShowSettings(true)}
-            className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-            title="Settings"
-          >
-            <SettingsIcon className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Editor panel */}
         <div
@@ -321,51 +146,8 @@ export function WebEditor() {
             showPreview ? (isPreviewFullscreen ? "w-0" : "w-1/2") : "w-full"
           }`}
         >
-          {/* File tabs */}
-          <div className="flex h-10 flex-shrink-0 items-center gap-0.5 border-b border-border bg-mantle px-2">
-            {currentProject.files.map((file, index) => {
-              const config = FILE_CONFIG[file.language] || {
-                icon: "?",
-                color: "var(--color-text-muted)",
-              };
-              const isActive = index === activeTab;
+          <FileTabs files={currentProject.files} activeTab={activeTab} onTabChange={setActiveTab} />
 
-              return (
-                <button
-                  key={file.name}
-                  onClick={() => setActiveTab(index)}
-                  className={`group relative flex items-center gap-2 rounded-t-md px-4 py-2 font-mono text-xs transition-all ${
-                    isActive
-                      ? "bg-base text-text"
-                      : "text-text-muted hover:bg-surface-0/50 hover:text-text"
-                  }`}
-                >
-                  {/* Language badge */}
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                    style={{
-                      backgroundColor: `color-mix(in srgb, ${config.color} 15%, transparent)`,
-                      color: config.color,
-                    }}
-                  >
-                    {config.icon}
-                  </span>
-
-                  <span>{file.name}</span>
-
-                  {/* Active indicator */}
-                  {isActive && (
-                    <div
-                      className="absolute bottom-0 left-0 right-0 h-0.5"
-                      style={{ backgroundColor: config.color }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Code editor */}
           <div className="flex-1 overflow-hidden bg-base">
             {activeFile && (
               <CodeEditor
@@ -380,73 +162,23 @@ export function WebEditor() {
 
         {/* Preview panel */}
         {showPreview && (
-          <div
-            className={`flex flex-col overflow-hidden transition-all ${
-              isPreviewFullscreen ? "w-full" : "w-1/2"
-            }`}
-          >
-            {/* Preview header */}
-            <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
-              <div className="flex items-center gap-2">
-                <Eye className="h-3.5 w-3.5 text-text-muted" />
-                <span className="font-mono text-xs text-text-muted">
-                  Live Preview
-                </span>
-                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)}
-                  className="rounded p-1 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-                  title={isPreviewFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                >
-                  {isPreviewFullscreen ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Preview iframe */}
-            <div className="flex-1 bg-white">
-              <iframe
-                ref={iframeRef}
-                key={previewKey}
-                className="h-full w-full"
-                sandbox="allow-scripts allow-modals"
-                srcDoc={previewHtml}
-                title="Preview"
-              />
-            </div>
-          </div>
+          <PreviewPanel
+            isFullscreen={isPreviewFullscreen}
+            previewKey={previewKey}
+            previewHtml={previewHtml}
+            iframeRef={iframeRef}
+            onToggleFullscreen={() => setIsPreviewFullscreen(!isPreviewFullscreen)}
+          />
         )}
       </div>
 
-      {/* Status bar */}
-      <footer className="flex h-6 flex-shrink-0 items-center justify-between border-t border-border bg-mantle px-4">
-        <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-text-subtle">
-            {activeFile?.language.toUpperCase()}
-          </span>
-          <span className="font-mono text-xs text-text-subtle">UTF-8</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-text-subtle">
-            {activeFile?.content.split("\n").length} lines
-          </span>
-        </div>
-      </footer>
+      <StatusBar
+        language={activeFile?.language}
+        lineCount={activeFile?.content.split("\n").length}
+      />
 
-      {/* Settings Modal */}
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
-
-      {/* About Modal */}
       <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
-
-      {/* Command Palette */}
       <CommandPalette
         isOpen={commandPalette.isOpen}
         onClose={commandPalette.close}
@@ -456,35 +188,205 @@ export function WebEditor() {
   );
 }
 
-function generatePreviewHtml(
-  files: { name: string; content: string; language: string }[]
-): string {
+// --- Sub-components ---
+
+interface WebEditorHeaderProps {
+  projectName: string;
+  showPreview: boolean;
+  onTogglePreview: () => void;
+  onRefreshPreview: () => void;
+  onOpenSettings: () => void;
+}
+
+function WebEditorHeader({
+  projectName,
+  showPreview,
+  onTogglePreview,
+  onRefreshPreview,
+  onOpenSettings,
+}: WebEditorHeaderProps) {
+  return (
+    <header className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
+      <div className="flex items-center gap-3">
+        <FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />
+        <span className="font-mono text-sm font-medium text-text">{projectName}</span>
+        <span className="rounded bg-surface-0 px-2 py-0.5 font-mono text-xs text-text-muted">
+          Web
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onTogglePreview}
+          className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
+            showPreview
+              ? "bg-accent/10 text-accent"
+              : "text-text-muted hover:bg-surface-0 hover:text-text"
+          }`}
+        >
+          {showPreview ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          Preview
+        </button>
+
+        <button
+          onClick={onRefreshPreview}
+          className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+          title="Refresh preview"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </button>
+
+        <div className="mx-2 h-4 w-px bg-border" />
+
+        <button
+          onClick={onOpenSettings}
+          className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+          title="Settings"
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+interface FileTabsProps {
+  files: { name: string; language: string }[];
+  activeTab: number;
+  onTabChange: (index: number) => void;
+}
+
+function FileTabs({ files, activeTab, onTabChange }: FileTabsProps) {
+  return (
+    <div className="flex h-10 flex-shrink-0 items-center gap-0.5 border-b border-border bg-mantle px-2">
+      {files.map((file, index) => {
+        const config = FILE_CONFIG[file.language] || {
+          icon: "?",
+          color: "var(--color-text-muted)",
+        };
+        const isActive = index === activeTab;
+
+        return (
+          <button
+            key={file.name}
+            onClick={() => onTabChange(index)}
+            className={`group relative flex items-center gap-2 rounded-t-md px-4 py-2 font-mono text-xs transition-all ${
+              isActive
+                ? "bg-base text-text"
+                : "text-text-muted hover:bg-surface-0/50 hover:text-text"
+            }`}
+          >
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+              style={{
+                backgroundColor: `color-mix(in srgb, ${config.color} 15%, transparent)`,
+                color: config.color,
+              }}
+            >
+              {config.icon}
+            </span>
+            <span>{file.name}</span>
+            {isActive && (
+              <div
+                className="absolute bottom-0 left-0 right-0 h-0.5"
+                style={{ backgroundColor: config.color }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface PreviewPanelProps {
+  isFullscreen: boolean;
+  previewKey: number;
+  previewHtml: string;
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  onToggleFullscreen: () => void;
+}
+
+function PreviewPanel({
+  isFullscreen,
+  previewKey,
+  previewHtml,
+  iframeRef,
+  onToggleFullscreen,
+}: PreviewPanelProps) {
+  return (
+    <div
+      className={`flex flex-col overflow-hidden transition-all ${isFullscreen ? "w-full" : "w-1/2"}`}
+    >
+      <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
+        <div className="flex items-center gap-2">
+          <Eye className="h-3.5 w-3.5 text-text-muted" />
+          <span className="font-mono text-xs text-text-muted">Live Preview</span>
+          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
+        </div>
+
+        <button
+          onClick={onToggleFullscreen}
+          className="rounded p-1 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+          title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </button>
+      </div>
+
+      <div className="flex-1 bg-white">
+        <iframe
+          ref={iframeRef}
+          key={previewKey}
+          className="h-full w-full"
+          sandbox="allow-scripts allow-modals"
+          srcDoc={previewHtml}
+          title="Preview"
+        />
+      </div>
+    </div>
+  );
+}
+
+interface StatusBarProps {
+  language: string | undefined;
+  lineCount: number | undefined;
+}
+
+function StatusBar({ language, lineCount }: StatusBarProps) {
+  return (
+    <footer className="flex h-6 flex-shrink-0 items-center justify-between border-t border-border bg-mantle px-4">
+      <div className="flex items-center gap-4">
+        <span className="font-mono text-xs text-text-subtle">{language?.toUpperCase()}</span>
+        <span className="font-mono text-xs text-text-subtle">UTF-8</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <span className="font-mono text-xs text-text-subtle">{lineCount} lines</span>
+      </div>
+    </footer>
+  );
+}
+
+// --- Utility functions ---
+
+function generatePreviewHtml(files: { name: string; content: string; language: string }[]): string {
   const html = files.find((f) => f.language === "html")?.content || "";
   const css = files.find((f) => f.language === "css")?.content || "";
   const js = files.find((f) => f.language === "javascript")?.content || "";
 
-  // Inject CSS and JS into HTML
   let result = html;
 
   // Replace stylesheet link with inline style
   if (result.includes('<link rel="stylesheet"')) {
-    result = result.replace(
-      /<link[^>]*rel="stylesheet"[^>]*>/gi,
-      `<style>${css}</style>`
-    );
+    result = result.replace(/<link[^>]*rel="stylesheet"[^>]*>/gi, `<style>${css}</style>`);
   } else if (css) {
-    // Add style tag to head if no link exists
     result = result.replace("</head>", `<style>${css}</style></head>`);
   }
 
   // Replace script src with inline script
   if (result.includes("<script src=")) {
-    result = result.replace(
-      /<script[^>]*src="[^"]*"[^>]*><\/script>/gi,
-      `<script>${js}</script>`
-    );
+    result = result.replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/gi, `<script>${js}</script>`);
   } else if (js) {
-    // Add script tag before body close if no script exists
     result = result.replace("</body>", `<script>${js}</script></body>`);
   }
 

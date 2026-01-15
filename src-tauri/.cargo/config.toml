@@ -1,0 +1,30 @@
+# Clippy lints configuration for CodeCell
+# These rules help prevent common issues and enforce code quality
+
+[target.'cfg(all())']
+rustflags = [
+  # === DENY (Will cause build errors) ===
+  # "-Dclippy::unwrap_used",         # Uncomment after fixing existing unwraps
+  # "-Dclippy::expect_used",         # Uncomment after adding proper error handling
+  "-Dclippy::panic",                 # Prevent panic!() in library code
+  "-Dclippy::todo",                  # Prevent todo!() in committed code
+
+  # === WARN (Will show warnings) ===
+  "-Wclippy::pedantic",              # Enable pedantic lints
+  "-Wclippy::cognitive_complexity",  # Flag overly complex functions
+  "-Wclippy::too_many_lines",        # Flag functions > 100 lines
+  "-Wclippy::fn_params_excessive_bools", # Prevent boolean parameter soup
+  "-Wclippy::implicit_clone",        # Prefer explicit .clone()
+  "-Wclippy::redundant_closure_for_method_calls", # Use method references
+  "-Wclippy::semicolon_if_nothing_returned", # Consistent semicolons
+  "-Wclippy::map_unwrap_or",         # Use map_or instead of map().unwrap_or()
+  "-Wclippy::manual_string_new",     # Use String::new() over String::from("")
+  "-Wclippy::doc_markdown",          # Proper markdown in docs
+
+  # === ALLOW (Override pedantic that's too noisy) ===
+  "-Aclippy::module_name_repetitions", # Allow ModuleName in module::ModuleName
+  "-Aclippy::must_use_candidate",      # Too noisy for Tauri commands
+  "-Aclippy::missing_errors_doc",      # Not needed for internal code
+  "-Aclippy::missing_panics_doc",      # Not needed for internal code
+  "-Aclippy::struct_excessive_bools",  # Allow structs with multiple bools
+]
