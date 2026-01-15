@@ -102,7 +102,7 @@ export function Launcher() {
             <h2 className="mb-4 font-mono text-sm font-medium uppercase tracking-wider text-text-muted">
               Recent
             </h2>
-            <RecentProjects onOpenNew={handleCreateProject} />
+            <RecentProjects />
           </section>
 
           {/* Vertical separator */}

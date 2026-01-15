@@ -14,10 +14,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-interface RecentProjectsProps {
-  onOpenNew: (template: TemplateType) => void;
-}
-
 const TEMPLATE_ICONS: Record<TemplateType, LucideIcon> = {
   web: Globe,
   node: Server,
@@ -53,7 +49,7 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString();
 }
 
-export function RecentProjects({ onOpenNew: _ }: RecentProjectsProps) {
+export function RecentProjects() {
   const { recentProjects } = useProjectStore();
 
   const handleOpenRecent = async (projectPath: string, template: TemplateType) => {

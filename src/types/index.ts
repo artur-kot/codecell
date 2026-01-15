@@ -67,3 +67,6 @@ export interface ExecutionResult {
   exitCode: number;
   duration: number;
 }
+
+// Re-export template utilities
+export { TEMPLATE_MAP, type TemplateDefinition } from "./templates";

@@ -4,7 +4,7 @@ import { About } from "@/components/About";
 import { CommandPalette, useCommandPalette, type PaletteCommand } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { CodeEditor } from "@/components/common/CodeEditor";
+import { CodeEditor } from "@/components/common";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import type { TemplateType, Project } from "@/types";
+import { TEMPLATE_MAP } from "@/types";
 
 interface ExecutionResult {
   stdout: string;
@@ -110,26 +111,11 @@ export function CompiledEditor() {
 
   // Handle creating new project from template
   const handleNewFromTemplate = useCallback(async (templateId: string) => {
-    // Map template IDs to types
-    const templateMap: Record<string, { type: TemplateType; config?: any }> = {
-      "web": { type: "web", config: { markup: "html", styling: "css", script: "javascript", framework: "none" } },
-      "web-react": { type: "web", config: { markup: "html", styling: "css", script: "typescript", framework: "react" } },
-      "node": { type: "node" },
-      "python": { type: "python" },
-      "rust": { type: "rust" },
-      "java": { type: "java" },
-    };
-
-    const template = templateMap[templateId];
+    const template = TEMPLATE_MAP[templateId];
     if (!template) return;
 
-    // Create project without updating global state (to avoid affecting this window)
     const project = createProjectWithoutSettingCurrent(template.type, template.config);
-
-    // Save project to temp storage
     await invoke("save_temp_project", { project });
-
-    // Open new editor window
     await invoke("open_editor_window", {
       projectId: project.id,
       templateType: template.type,

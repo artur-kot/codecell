@@ -241,6 +241,26 @@ console.log("Time:", greeting.timestamp.toISOString());`,
   }
 }
 
+/**
+ * Creates a new Project object with the given template and config.
+ * This is a pure function that doesn't interact with store state.
+ */
+function buildProject(template: TemplateType, config?: WebTemplateConfig): Project {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  return {
+    id,
+    name: "Untitled",
+    template,
+    webConfig: template === "web" ? config : undefined,
+    files: generateDefaultFiles(template, config),
+    createdAt: now,
+    updatedAt: now,
+    savedPath: null,
+  };
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProject: null,
   recentProjects: [],
@@ -400,42 +420,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   createProject: (template, config) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    const project: Project = {
-      id,
-      name: "Untitled",
-      template,
-      webConfig: template === "web" ? config : undefined,
-      files: generateDefaultFiles(template, config),
-      createdAt: now,
-      updatedAt: now,
-      savedPath: null,
-    };
-
+    const project = buildProject(template, config);
     set({ currentProject: project });
     return project;
   },
 
-  // Creates a project without updating the global currentProject state
-  // Use this when opening a new window from an existing editor to avoid state conflicts
+  // Creates a project without updating the global currentProject state.
+  // Use this when opening a new window from an existing editor to avoid state conflicts.
   createProjectWithoutSettingCurrent: (template, config) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    const project: Project = {
-      id,
-      name: "Untitled",
-      template,
-      webConfig: template === "web" ? config : undefined,
-      files: generateDefaultFiles(template, config),
-      createdAt: now,
-      updatedAt: now,
-      savedPath: null,
-    };
-
-    // Don't call set() - just return the project
-    return project;
+    return buildProject(template, config);
   },
 }));
