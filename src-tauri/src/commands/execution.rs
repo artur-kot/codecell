@@ -1,3 +1,4 @@
+use crate::services::{check_runtime, RuntimeInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -88,6 +89,20 @@ fn update_stop_menu_state(app: &AppHandle, window_id: &str, enabled: bool) {
     }
 }
 
+// --- Runtime Check Helper ---
+
+/// Check if a runtime is available, emit error if not
+fn check_runtime_available(runtime: &RuntimeInfo, window_id: &str, app: &AppHandle) -> bool {
+    let result = check_runtime(runtime);
+    if !result.available {
+        if let Some(hint) = result.install_hint {
+            emit_completion(app, window_id, "", &hint, 1, 0);
+        }
+        return false;
+    }
+    true
+}
+
 // --- Public Commands ---
 
 #[tauri::command]
@@ -117,6 +132,9 @@ pub async fn execute_python(
     processes: State<'_, RunningProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if !check_runtime_available(&RuntimeInfo::PYTHON, &window_id, &app) {
+        return Ok(());
+    }
     execute_interpreted(&code, &window_id, "py", "python3", &[], &processes, &app).await
 }
 
@@ -127,6 +145,9 @@ pub async fn execute_node(
     processes: State<'_, RunningProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if !check_runtime_available(&RuntimeInfo::NODE, &window_id, &app) {
+        return Ok(());
+    }
     execute_interpreted(&code, &window_id, "js", "node", &[], &processes, &app).await
 }
 
@@ -137,6 +158,9 @@ pub async fn execute_typescript(
     processes: State<'_, RunningProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if !check_runtime_available(&RuntimeInfo::NPX, &window_id, &app) {
+        return Ok(());
+    }
     execute_interpreted(&code, &window_id, "ts", "npx", &["tsx"], &processes, &app).await
 }
 
@@ -147,6 +171,9 @@ pub async fn execute_rust(
     processes: State<'_, RunningProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if !check_runtime_available(&RuntimeInfo::RUST, &window_id, &app) {
+        return Ok(());
+    }
     execute_compiled_rust(&code, &window_id, &processes, &app).await
 }
 
@@ -157,6 +184,13 @@ pub async fn execute_java(
     processes: State<'_, RunningProcesses>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Java needs both javac (compiler) and java (runtime)
+    if !check_runtime_available(&RuntimeInfo::JAVAC, &window_id, &app) {
+        return Ok(());
+    }
+    if !check_runtime_available(&RuntimeInfo::JAVA, &window_id, &app) {
+        return Ok(());
+    }
     execute_compiled_java(&code, &window_id, &processes, &app).await
 }
 
