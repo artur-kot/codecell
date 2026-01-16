@@ -15,6 +15,17 @@ export interface QuickTemplate {
   config?: WebTemplateConfig;
   icon: string;
   isBuiltIn: boolean;
+  files?: ProjectFile[]; // For custom templates
+}
+
+export interface CustomTemplate {
+  id: string;
+  name: string;
+  type: TemplateType;
+  config?: WebTemplateConfig;
+  icon: string;
+  files: ProjectFile[];
+  createdAt: string;
 }
 
 // Project Types

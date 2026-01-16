@@ -137,10 +137,10 @@ const catppuccinTheme = EditorView.theme({
     minWidth: "3em",
   },
   ".cm-activeLine": {
-    backgroundColor: "var(--color-surface-0)",
+    backgroundColor: "color-mix(in srgb, var(--color-surface-0) 40%, transparent)",
   },
   ".cm-activeLineGutter": {
-    backgroundColor: "var(--color-surface-0)",
+    backgroundColor: "color-mix(in srgb, var(--color-surface-0) 40%, transparent)",
     color: "var(--color-text-muted)",
   },
   ".cm-selectionBackground": {

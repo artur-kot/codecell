@@ -1,15 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Settings } from "@/components/Settings";
-import { About } from "@/components/About";
 import {
   CommandPalette,
   useCommandPalette,
   type PaletteCommand,
 } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
-import { CodeEditor } from "@/components/common";
+import {
+  CodeEditor,
+  ToastContainer,
+  useToast,
+  ConfirmDialog,
+  SaveTemplateDialog,
+  KeyboardShortcuts,
+  TitleBar,
+  MenuBar,
+  useEditorMenus,
+} from "@/components/common";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Play,
   Square,
@@ -21,10 +29,21 @@ import {
   Loader2,
   ChevronUp,
   ChevronDown,
-  Settings as SettingsIcon,
   X,
+  Copy,
+  Bookmark,
+  Keyboard,
 } from "lucide-react";
-import { useProjectLoader, useAutosave, useMenuEvents, useThemeCommands } from "@/hooks";
+import {
+  useProjectLoader,
+  useAutosave,
+  useMenuEvents,
+  useThemeCommands,
+  useUnsavedChanges,
+  useWindowTitle,
+  useKeyboardShortcuts,
+  useWindowState,
+} from "@/hooks";
 
 interface ExecutionResult {
   stdout: string;
@@ -51,19 +70,31 @@ const LANGUAGE_CONFIG: Record<string, { name: string; color: string; executor: s
 };
 
 export function CompiledEditor() {
-  const { currentProject, updateFile } = useProjectStore();
+  const {
+    currentProject,
+    updateFile,
+    saveAsTemplate,
+    saveProject,
+    saveProjectAs,
+    openProjectInNewWindow,
+  } = useProjectStore();
+  const isDirty = useProjectStore((state) => state.isDirty);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [streamingOutput, setStreamingOutput] = useState({ stdout: "", stderr: "" });
   const [showOutput, setShowOutput] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  const toast = useToast();
+  const unsavedChanges = useUnsavedChanges();
   const commandPalette = useCommandPalette();
   const outputHeight = 200;
 
   // Use shared hooks
   const { isLoading, projectId, templateType } = useProjectLoader("node");
+  const { isMaximized } = useWindowState();
   useAutosave();
+  useWindowTitle();
 
   const config = LANGUAGE_CONFIG[templateType] || LANGUAGE_CONFIG.node;
   const windowId = `editor-${projectId}`;
@@ -102,21 +133,38 @@ export function CompiledEditor() {
     onRun: handleRun,
     onStop: handleStop,
     onToggleOutput: () => setShowOutput((prev) => !prev),
-    onAbout: () => setShowAbout(true),
+    onSaveAsTemplate: () => setShowSaveTemplate(true),
   });
 
-  // Listen for execution events from backend
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSave: saveProject,
+    onSaveAs: saveProjectAs,
+    onOpen: openProjectInNewWindow,
+    onToggleOutput: () => setShowOutput((prev) => !prev),
+    onRun: handleRun,
+    onStop: handleStop,
+  });
+
+  // Open settings window
+  const openSettings = useCallback(async () => {
+    await invoke("open_settings_window");
+  }, []);
+
+  // Listen for execution events from backend (window-specific)
   useEffect(() => {
-    const unlistenStateChange = listen<boolean>("execution:state-changed", (event) => {
+    const appWindow = getCurrentWindow();
+
+    const unlistenStateChange = appWindow.listen<boolean>("execution:state-changed", (event) => {
       setIsRunning(event.payload);
     });
 
-    const unlistenOutput = listen<ExecutionOutput>("execution:output", (event) => {
+    const unlistenOutput = appWindow.listen<ExecutionOutput>("execution:output", (event) => {
       const { line, stream } = event.payload;
       setStreamingOutput((prev) => ({ ...prev, [stream]: prev[stream] + line }));
     });
 
-    const unlistenCompleted = listen<ExecutionResult>("execution:completed", (event) => {
+    const unlistenCompleted = appWindow.listen<ExecutionResult>("execution:completed", (event) => {
       setResult(event.payload);
       setIsRunning(false);
     });
@@ -126,6 +174,27 @@ export function CompiledEditor() {
       unlistenOutput.then((fn) => fn());
       unlistenCompleted.then((fn) => fn());
     };
+  }, []);
+
+  // Global keyboard shortcut for help
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Show keyboard shortcuts with "?" key (when not in input/editor)
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        const isEditing =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.closest(".cm-editor");
+        if (!isEditing) {
+          e.preventDefault();
+          setShowKeyboardShortcuts(true);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleContentChange = useCallback(
@@ -138,7 +207,20 @@ export function CompiledEditor() {
   );
 
   // Theme commands from shared hook
-  const themeCommands = useThemeCommands({ onOpenSettings: () => setShowSettings(true) });
+  const themeCommands = useThemeCommands({ onOpenSettings: openSettings });
+
+  // Handle save as template
+  const handleSaveAsTemplate = useCallback(
+    async (name: string, icon: string) => {
+      const success = await saveAsTemplate(name, icon);
+      if (success) {
+        toast.success("Template saved successfully");
+      } else {
+        toast.error("Failed to save template");
+      }
+    },
+    [saveAsTemplate, toast]
+  );
 
   // Command palette commands
   const commands: PaletteCommand[] = useMemo(
@@ -168,10 +250,41 @@ export function CompiledEditor() {
         action: () => setShowOutput(!showOutput),
         category: "View",
       },
+      {
+        id: "save-as-template",
+        label: "Save as Template",
+        description: "Save current note as a reusable template",
+        icon: <Bookmark className="h-4 w-4" />,
+        action: () => setShowSaveTemplate(true),
+        category: "File",
+      },
+      {
+        id: "keyboard-shortcuts",
+        label: "Keyboard Shortcuts",
+        description: "View all keyboard shortcuts",
+        shortcut: "?",
+        icon: <Keyboard className="h-4 w-4" />,
+        action: () => setShowKeyboardShortcuts(true),
+        category: "Help",
+      },
       ...themeCommands,
     ],
     [showOutput, handleRun, themeCommands]
   );
+
+  // Menu bar configuration - must be before early return to follow Rules of Hooks
+  const menus = useEditorMenus({
+    isWebEditor: false,
+    isRunning,
+    onSave: saveProject,
+    onSaveAs: saveProjectAs,
+    onSaveAsTemplate: () => setShowSaveTemplate(true),
+    onOpen: openProjectInNewWindow,
+    onToggleOutput: () => setShowOutput((prev) => !prev),
+    onRun: handleRun,
+    onStop: handleStop,
+    onSettings: openSettings,
+  });
 
   if (isLoading || !currentProject) {
     return (
@@ -187,146 +300,134 @@ export function CompiledEditor() {
   const file = currentProject.files[0];
 
   return (
-    <div className="flex h-screen flex-col bg-crust">
-      <EditorHeader
-        projectName={currentProject.name}
-        config={config}
-        isRunning={isRunning}
-        showOutput={showOutput}
-        onRun={handleRun}
-        onStop={handleStop}
-        onToggleOutput={() => setShowOutput(!showOutput)}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div
-          className="flex-1 overflow-hidden bg-base"
-          style={{ height: showOutput ? `calc(100% - ${outputHeight}px)` : "100%" }}
+    <div className={`window-frame ${isMaximized ? "maximized" : ""}`}>
+      <div className="window-container flex flex-col bg-crust">
+        <TitleBar
+          title={currentProject.name}
+          subtitle={config.name}
+          isDirty={isDirty}
+          icon={<FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />}
         >
-          {file && (
-            <CodeEditor
-              value={file.content}
-              language={file.language}
-              onChange={handleContentChange}
+          <MenuBar menus={menus} className="ml-2" />
+
+          <div className="ml-auto flex items-center gap-2 pr-2">
+            <button
+              onClick={handleRun}
+              disabled={isRunning}
+              className="flex items-center gap-2 rounded-md bg-success/10 px-4 py-1.5 font-mono text-xs font-medium text-success transition-all hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRunning ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              {isRunning ? "Running..." : "Run"}
+            </button>
+
+            {isRunning && (
+              <button
+                onClick={handleStop}
+                className="flex items-center gap-2 rounded-md bg-error/10 px-3 py-1.5 font-mono text-xs font-medium text-error transition-all hover:bg-error/20"
+              >
+                <Square className="h-3.5 w-3.5" />
+                Stop
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowOutput(!showOutput)}
+              className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
+                showOutput
+                  ? "bg-surface-0 text-text"
+                  : "text-text-muted hover:bg-surface-0 hover:text-text"
+              }`}
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              Output
+              {showOutput ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+            </button>
+          </div>
+        </TitleBar>
+
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div
+            className="flex-1 overflow-hidden bg-base"
+            style={{ height: showOutput ? `calc(100% - ${outputHeight}px)` : "100%" }}
+          >
+            {file && (
+              <CodeEditor
+                value={file.content}
+                language={file.language}
+                onChange={handleContentChange}
+              />
+            )}
+          </div>
+
+          {showOutput && (
+            <OutputPanel
+              height={outputHeight}
+              result={result}
+              streamingOutput={streamingOutput}
+              isRunning={isRunning}
+              onClear={() => {
+                setResult(null);
+                setStreamingOutput({ stdout: "", stderr: "" });
+              }}
+              onClose={() => setShowOutput(false)}
+              onCopy={async () => {
+                const output = result
+                  ? `${result.stdout}${result.stderr}`
+                  : `${streamingOutput.stdout}${streamingOutput.stderr}`;
+                if (output) {
+                  await navigator.clipboard.writeText(output);
+                  toast.success("Output copied to clipboard");
+                }
+              }}
             />
           )}
         </div>
 
-        {showOutput && (
-          <OutputPanel
-            height={outputHeight}
-            result={result}
-            streamingOutput={streamingOutput}
-            isRunning={isRunning}
-            onClear={() => setResult(null)}
-            onClose={() => setShowOutput(false)}
-          />
-        )}
+        <StatusBar language={file?.language} lineCount={file?.content.split("\n").length} />
+
+        <CommandPalette
+          isOpen={commandPalette.isOpen}
+          onClose={commandPalette.close}
+          commands={commands}
+        />
+
+        <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
+
+        <ConfirmDialog
+          isOpen={unsavedChanges.showDialog}
+          title="Unsaved Changes"
+          message="You have unsaved changes. Do you want to save before closing?"
+          confirmLabel="Save"
+          cancelLabel="Cancel"
+          onConfirm={unsavedChanges.handleSave}
+          onCancel={unsavedChanges.handleCancel}
+          extraAction={{
+            label: "Don't Save",
+            onClick: unsavedChanges.handleDiscard,
+          }}
+        />
+
+        <SaveTemplateDialog
+          isOpen={showSaveTemplate}
+          onClose={() => setShowSaveTemplate(false)}
+          onSave={handleSaveAsTemplate}
+          defaultName={currentProject.name !== "Untitled" ? currentProject.name : ""}
+        />
+
+        <KeyboardShortcuts
+          isOpen={showKeyboardShortcuts}
+          onClose={() => setShowKeyboardShortcuts(false)}
+        />
       </div>
-
-      <StatusBar language={file?.language} lineCount={file?.content.split("\n").length} />
-
-      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
-      <CommandPalette
-        isOpen={commandPalette.isOpen}
-        onClose={commandPalette.close}
-        commands={commands}
-      />
     </div>
   );
 }
 
 // --- Sub-components extracted for clarity ---
-
-interface EditorHeaderProps {
-  projectName: string;
-  config: { name: string; color: string };
-  isRunning: boolean;
-  showOutput: boolean;
-  onRun: () => void;
-  onStop: () => void;
-  onToggleOutput: () => void;
-  onOpenSettings: () => void;
-}
-
-function EditorHeader({
-  projectName,
-  config,
-  isRunning,
-  showOutput,
-  onRun,
-  onStop,
-  onToggleOutput,
-  onOpenSettings,
-}: EditorHeaderProps) {
-  return (
-    <header className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
-      <div className="flex items-center gap-3">
-        <FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />
-        <span className="font-mono text-sm font-medium text-text">{projectName}</span>
-        <span
-          className="rounded px-2 py-0.5 font-mono text-xs font-medium"
-          style={{
-            backgroundColor: `color-mix(in srgb, ${config.color} 15%, transparent)`,
-            color: config.color,
-          }}
-        >
-          {config.name}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onRun}
-          disabled={isRunning}
-          className="flex items-center gap-2 rounded-md bg-success/10 px-4 py-1.5 font-mono text-xs font-medium text-success transition-all hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isRunning ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-          {isRunning ? "Running..." : "Run"}
-        </button>
-
-        {isRunning && (
-          <button
-            onClick={onStop}
-            className="flex items-center gap-2 rounded-md bg-error/10 px-3 py-1.5 font-mono text-xs font-medium text-error transition-all hover:bg-error/20"
-          >
-            <Square className="h-3.5 w-3.5" />
-            Stop
-          </button>
-        )}
-
-        <button
-          onClick={onToggleOutput}
-          className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
-            showOutput
-              ? "bg-surface-0 text-text"
-              : "text-text-muted hover:bg-surface-0 hover:text-text"
-          }`}
-        >
-          <Terminal className="h-3.5 w-3.5" />
-          Output
-          {showOutput ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-        </button>
-
-        <div className="mx-2 h-4 w-px bg-border" />
-
-        <button
-          onClick={onOpenSettings}
-          className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-          title="Settings"
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </button>
-      </div>
-    </header>
-  );
-}
 
 interface OutputPanelProps {
   height: number;
@@ -335,6 +436,7 @@ interface OutputPanelProps {
   isRunning: boolean;
   onClear: () => void;
   onClose: () => void;
+  onCopy: () => void;
 }
 
 function OutputPanel({
@@ -344,7 +446,10 @@ function OutputPanel({
   isRunning,
   onClear,
   onClose,
+  onCopy,
 }: OutputPanelProps) {
+  const hasOutput =
+    result?.stdout || result?.stderr || streamingOutput.stdout || streamingOutput.stderr;
   return (
     <div className="flex flex-col border-t border-border bg-mantle" style={{ height }}>
       <div className="flex h-9 flex-shrink-0 items-center justify-between border-b border-border px-4">
@@ -381,6 +486,16 @@ function OutputPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {hasOutput && (
+            <button
+              onClick={onCopy}
+              className="flex items-center gap-1 font-mono text-xs text-text-subtle transition-colors hover:text-text-muted"
+              title="Copy output"
+            >
+              <Copy className="h-3 w-3" />
+              Copy
+            </button>
+          )}
           <button
             onClick={onClear}
             className="font-mono text-xs text-text-subtle transition-colors hover:text-text-muted"

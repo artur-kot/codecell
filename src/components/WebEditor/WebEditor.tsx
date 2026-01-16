@@ -1,13 +1,22 @@
-import { useState, useCallback, useRef, useMemo } from "react";
-import { Settings } from "@/components/Settings";
-import { About } from "@/components/About";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   CommandPalette,
   useCommandPalette,
   type PaletteCommand,
 } from "@/components/CommandPalette";
 import { useProjectStore } from "@/stores/projectStore";
-import { CodeEditor } from "@/components/common";
+import {
+  CodeEditor,
+  ConfirmDialog,
+  SaveTemplateDialog,
+  useToast,
+  ToastContainer,
+  KeyboardShortcuts,
+  TitleBar,
+  MenuBar,
+  useEditorMenus,
+} from "@/components/common";
 import {
   FileCode,
   Eye,
@@ -16,10 +25,20 @@ import {
   Maximize2,
   Minimize2,
   Loader2,
-  Settings as SettingsIcon,
   Code,
+  Bookmark,
+  Keyboard,
 } from "lucide-react";
-import { useProjectLoader, useAutosave, useMenuEvents, useThemeCommands } from "@/hooks";
+import {
+  useProjectLoader,
+  useAutosave,
+  useMenuEvents,
+  useThemeCommands,
+  useUnsavedChanges,
+  useWindowTitle,
+  useKeyboardShortcuts,
+  useWindowState,
+} from "@/hooks";
 
 const FILE_CONFIG: Record<string, { icon: string; color: string }> = {
   html: { icon: "HTML", color: "var(--color-template-web)" },
@@ -29,23 +48,43 @@ const FILE_CONFIG: Record<string, { icon: string; color: string }> = {
 };
 
 export function WebEditor() {
-  const { currentProject, updateFile } = useProjectStore();
+  const {
+    currentProject,
+    updateFile,
+    saveAsTemplate,
+    saveProject,
+    saveProjectAs,
+    openProjectInNewWindow,
+  } = useProjectStore();
+  const isDirty = useProjectStore((state) => state.isDirty);
   const [activeTab, setActiveTab] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null!);
   const commandPalette = useCommandPalette();
+  const unsavedChanges = useUnsavedChanges();
+  const toast = useToast();
 
   // Use shared hooks
   const { isLoading } = useProjectLoader("web");
+  const { isMaximized } = useWindowState();
   useAutosave();
+  useWindowTitle();
   useMenuEvents({
     onTogglePreview: () => setShowPreview((prev) => !prev),
-    onAbout: () => setShowAbout(true),
+    onSaveAsTemplate: () => setShowSaveTemplate(true),
+  });
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSave: saveProject,
+    onSaveAs: saveProjectAs,
+    onOpen: openProjectInNewWindow,
+    onTogglePreview: () => setShowPreview((prev) => !prev),
   });
 
   // Debounced preview refresh
@@ -66,8 +105,47 @@ export function WebEditor() {
     [currentProject, activeTab, updateFile, refreshPreview]
   );
 
+  // Open settings window
+  const openSettings = useCallback(async () => {
+    await invoke("open_settings_window");
+  }, []);
+
   // Theme commands from shared hook
-  const themeCommands = useThemeCommands({ onOpenSettings: () => setShowSettings(true) });
+  const themeCommands = useThemeCommands({ onOpenSettings: openSettings });
+
+  // Handle save as template
+  const handleSaveAsTemplate = useCallback(
+    async (name: string, icon: string) => {
+      const success = await saveAsTemplate(name, icon);
+      if (success) {
+        toast.success("Template saved successfully");
+      } else {
+        toast.error("Failed to save template");
+      }
+    },
+    [saveAsTemplate, toast]
+  );
+
+  // Global keyboard shortcut for help
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Show keyboard shortcuts with "?" key (when not in input/editor)
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        const isEditing =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.closest(".cm-editor");
+        if (!isEditing) {
+          e.preventDefault();
+          setShowKeyboardShortcuts(true);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Command palette commands
   const commands: PaletteCommand[] = useMemo(
@@ -110,10 +188,38 @@ export function WebEditor() {
         action: () => setActiveTab(index),
         category: "Files",
       })) || []),
+      {
+        id: "save-as-template",
+        label: "Save as Template",
+        description: "Save current note as a reusable template",
+        icon: <Bookmark className="h-4 w-4" />,
+        action: () => setShowSaveTemplate(true),
+        category: "File",
+      },
+      {
+        id: "keyboard-shortcuts",
+        label: "Keyboard Shortcuts",
+        description: "View all keyboard shortcuts",
+        shortcut: "?",
+        icon: <Keyboard className="h-4 w-4" />,
+        action: () => setShowKeyboardShortcuts(true),
+        category: "Help",
+      },
       ...themeCommands,
     ],
     [showPreview, isPreviewFullscreen, currentProject?.files, themeCommands]
   );
+
+  // Menu bar configuration - must be before early return to follow Rules of Hooks
+  const menus = useEditorMenus({
+    isWebEditor: true,
+    onSave: saveProject,
+    onSaveAs: saveProjectAs,
+    onSaveAsTemplate: () => setShowSaveTemplate(true),
+    onOpen: openProjectInNewWindow,
+    onTogglePreview: () => setShowPreview((prev) => !prev),
+    onSettings: openSettings,
+  });
 
   if (isLoading || !currentProject) {
     return (
@@ -130,125 +236,120 @@ export function WebEditor() {
   const previewHtml = generatePreviewHtml(currentProject.files);
 
   return (
-    <div className="flex h-screen flex-col bg-crust">
-      <WebEditorHeader
-        projectName={currentProject.name}
-        showPreview={showPreview}
-        onTogglePreview={() => setShowPreview(!showPreview)}
-        onRefreshPreview={() => setPreviewKey((k) => k + 1)}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Editor panel */}
-        <div
-          className={`flex flex-col overflow-hidden border-r border-border transition-all ${
-            showPreview ? (isPreviewFullscreen ? "w-0" : "w-1/2") : "w-full"
-          }`}
+    <div className={`window-frame ${isMaximized ? "maximized" : ""}`}>
+      <div className="window-container flex flex-col bg-crust">
+        <TitleBar
+          title={currentProject.name}
+          subtitle="Web"
+          isDirty={isDirty}
+          icon={<FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />}
         >
-          <FileTabs files={currentProject.files} activeTab={activeTab} onTabChange={setActiveTab} />
+          <MenuBar menus={menus} className="ml-2" />
 
-          <div className="flex-1 overflow-hidden bg-base">
-            {activeFile && (
-              <CodeEditor
-                key={`${activeFile.name}-${activeTab}`}
-                value={activeFile.content}
-                language={activeFile.language}
-                onChange={handleContentChange}
-              />
-            )}
+          <div className="ml-auto flex items-center gap-2 pr-2">
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
+                showPreview
+                  ? "bg-accent/10 text-accent"
+                  : "text-text-muted hover:bg-surface-0 hover:text-text"
+              }`}
+            >
+              {showPreview ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              Preview
+            </button>
+
+            <button
+              onClick={() => setPreviewKey((k) => k + 1)}
+              className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
+              title="Refresh preview"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
           </div>
+        </TitleBar>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* Editor panel */}
+          <div
+            className={`flex flex-col overflow-hidden border-r border-border transition-all ${
+              showPreview ? (isPreviewFullscreen ? "w-0" : "w-1/2") : "w-full"
+            }`}
+          >
+            <FileTabs
+              files={currentProject.files}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+
+            <div className="flex-1 overflow-hidden bg-base">
+              {activeFile && (
+                <CodeEditor
+                  key={`${activeFile.name}-${activeTab}`}
+                  value={activeFile.content}
+                  language={activeFile.language}
+                  onChange={handleContentChange}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Preview panel */}
+          {showPreview && (
+            <PreviewPanel
+              isFullscreen={isPreviewFullscreen}
+              previewKey={previewKey}
+              previewHtml={previewHtml}
+              iframeRef={iframeRef}
+              onToggleFullscreen={() => setIsPreviewFullscreen(!isPreviewFullscreen)}
+            />
+          )}
         </div>
 
-        {/* Preview panel */}
-        {showPreview && (
-          <PreviewPanel
-            isFullscreen={isPreviewFullscreen}
-            previewKey={previewKey}
-            previewHtml={previewHtml}
-            iframeRef={iframeRef}
-            onToggleFullscreen={() => setIsPreviewFullscreen(!isPreviewFullscreen)}
-          />
-        )}
+        <StatusBar
+          language={activeFile?.language}
+          lineCount={activeFile?.content.split("\n").length}
+        />
+
+        <CommandPalette
+          isOpen={commandPalette.isOpen}
+          onClose={commandPalette.close}
+          commands={commands}
+        />
+
+        <ConfirmDialog
+          isOpen={unsavedChanges.showDialog}
+          title="Unsaved Changes"
+          message="You have unsaved changes. Do you want to save before closing?"
+          confirmLabel="Save"
+          cancelLabel="Cancel"
+          onConfirm={unsavedChanges.handleSave}
+          onCancel={unsavedChanges.handleCancel}
+          extraAction={{
+            label: "Don't Save",
+            onClick: unsavedChanges.handleDiscard,
+          }}
+        />
+
+        <SaveTemplateDialog
+          isOpen={showSaveTemplate}
+          onClose={() => setShowSaveTemplate(false)}
+          onSave={handleSaveAsTemplate}
+          defaultName={currentProject.name !== "Untitled" ? currentProject.name : ""}
+        />
+
+        <KeyboardShortcuts
+          isOpen={showKeyboardShortcuts}
+          onClose={() => setShowKeyboardShortcuts(false)}
+        />
+
+        <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
       </div>
-
-      <StatusBar
-        language={activeFile?.language}
-        lineCount={activeFile?.content.split("\n").length}
-      />
-
-      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      <About isOpen={showAbout} onClose={() => setShowAbout(false)} />
-      <CommandPalette
-        isOpen={commandPalette.isOpen}
-        onClose={commandPalette.close}
-        commands={commands}
-      />
     </div>
   );
 }
 
 // --- Sub-components ---
-
-interface WebEditorHeaderProps {
-  projectName: string;
-  showPreview: boolean;
-  onTogglePreview: () => void;
-  onRefreshPreview: () => void;
-  onOpenSettings: () => void;
-}
-
-function WebEditorHeader({
-  projectName,
-  showPreview,
-  onTogglePreview,
-  onRefreshPreview,
-  onOpenSettings,
-}: WebEditorHeaderProps) {
-  return (
-    <header className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-mantle px-4">
-      <div className="flex items-center gap-3">
-        <FileCode className="h-4 w-4 text-accent" strokeWidth={1.5} />
-        <span className="font-mono text-sm font-medium text-text">{projectName}</span>
-        <span className="rounded bg-surface-0 px-2 py-0.5 font-mono text-xs text-text-muted">
-          Web
-        </span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onTogglePreview}
-          className={`flex items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
-            showPreview
-              ? "bg-accent/10 text-accent"
-              : "text-text-muted hover:bg-surface-0 hover:text-text"
-          }`}
-        >
-          {showPreview ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-          Preview
-        </button>
-
-        <button
-          onClick={onRefreshPreview}
-          className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-          title="Refresh preview"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
-
-        <div className="mx-2 h-4 w-px bg-border" />
-
-        <button
-          onClick={onOpenSettings}
-          className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-0 hover:text-text"
-          title="Settings"
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </button>
-      </div>
-    </header>
-  );
-}
 
 interface FileTabsProps {
   files: { name: string; language: string }[];
@@ -303,7 +404,7 @@ interface PreviewPanelProps {
   isFullscreen: boolean;
   previewKey: number;
   previewHtml: string;
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  iframeRef: React.RefObject<HTMLIFrameElement>;
   onToggleFullscreen: () => void;
 }
 

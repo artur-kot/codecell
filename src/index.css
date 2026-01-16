@@ -135,14 +135,83 @@
 
 html {
   font-size: 14px;
+  background: transparent;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-editor);
+  background: transparent;
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Outer wrapper that provides space for shadow */
+.window-frame {
+  /*
+   * Padding must accommodate shadow blur radius (16px max).
+   * Slightly more at bottom since shadows visually fall downward.
+   */
+  padding: 10px 14px 18px 14px;
+  height: 100vh;
+  width: 100vw;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+/* When maximized, remove padding and shadow for full coverage */
+.window-frame.maximized {
+  padding: 0;
+}
+
+.window-frame.maximized .window-container {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* Window container with refined macOS-like appearance */
+.window-container {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  /* Subtle border that's visible in both themes */
+  border: 0.5px solid var(--color-window-border, rgba(0, 0, 0, 0.12));
+  /*
+   * macOS-style layered shadow:
+   * - Layer 1: Tight contact shadow for grounding
+   * - Layer 2: Medium shadow for primary depth
+   * - Layer 3: Soft ambient shadow for atmosphere
+   * All blur values fit within our padding constraints
+   */
+  box-shadow:
+    0 0.5px 1px rgba(0, 0, 0, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 4px 8px rgba(0, 0, 0, 0.1),
+    0 8px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Dark theme: lighter, more subtle shadow + glowing border effect */
+[data-theme="dark"] .window-container {
+  --color-window-border: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.05),
+    0 0.5px 1px rgba(0, 0, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* Light theme: sharper, more defined shadow */
+[data-theme="light"] .window-container {
+  --color-window-border: rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 0.5px 1px rgba(0, 0, 0, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 4px 8px rgba(0, 0, 0, 0.06),
+    0 8px 16px rgba(0, 0, 0, 0.04);
 }
 
 /* Custom scrollbar */
@@ -350,7 +419,8 @@ body {
 
 /* Launcher animations */
 @keyframes cellPulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.4;
   }
   50% {
@@ -368,7 +438,8 @@ body {
 }
 
 @keyframes borderGlow {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.3;
   }
   50% {
@@ -390,14 +461,18 @@ body {
 }
 
 .template-card::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1px;
   background: linear-gradient(135deg, transparent 40%, var(--glow-color, var(--color-accent)) 100%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   opacity: 0;
@@ -433,21 +508,28 @@ body {
     black calc(100% - 48px),
     transparent 100%
   );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black calc(100% - 48px),
-    transparent 100%
-  );
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 48px), transparent 100%);
 }
 
 /* Staggered animation delays */
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
-.stagger-6 { animation-delay: 0.3s; }
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+.stagger-6 {
+  animation-delay: 0.3s;
+}
 
 /* Glow effects */
 .glow-accent {

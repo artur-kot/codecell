@@ -36,7 +36,6 @@ pub struct Project {
     pub files: Vec<ProjectFile>,
     pub created_at: String,
     pub updated_at: String,
-    #[serde(skip_serializing)]
     pub saved_path: Option<String>,
 }
 
@@ -48,4 +47,17 @@ pub struct RecentProject {
     pub template: TemplateType,
     pub path: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub template_type: TemplateType,
+    pub config: Option<WebConfig>,
+    pub icon: String,
+    pub files: Vec<ProjectFile>,
+    pub created_at: String,
 }

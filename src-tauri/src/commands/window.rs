@@ -1,4 +1,3 @@
-use crate::build_menu;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -21,12 +20,14 @@ pub async fn open_editor_window(
         .min_inner_size(800.0, 600.0)
         .resizable(true)
         .center()
+        .decorations(false)
+        .shadow(true)
+        .transparent(true)
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Set the appropriate menu for this editor type
-    let menu = build_menu(&app, is_web).map_err(|e| e.to_string())?;
-    window.set_menu(menu).map_err(|e| e.to_string())?;
+    // Remove native menu - we use custom menubar in the UI
+    let _ = window.remove_menu();
 
     Ok(())
 }
@@ -45,11 +46,42 @@ pub async fn open_settings_window(app: AppHandle) -> Result<(), String> {
         .min_inner_size(400.0, 400.0)
         .resizable(true)
         .center()
+        .decorations(false)
+        .shadow(true)
+        .transparent(true)
         .build()
         .map_err(|e| e.to_string())?;
 
     // Remove menu from settings window
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.remove_menu();
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_about_window(app: AppHandle) -> Result<(), String> {
+    // Check if about window already exists
+    if let Some(window) = app.get_webview_window("about") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(&app, "about", WebviewUrl::App("/about".into()))
+        .title("About CodeCell")
+        .inner_size(400.0, 480.0)
+        .min_inner_size(350.0, 400.0)
+        .resizable(false)
+        .center()
+        .decorations(false)
+        .shadow(true)
+        .transparent(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Remove menu from about window
+    if let Some(window) = app.get_webview_window("about") {
         let _ = window.remove_menu();
     }
 

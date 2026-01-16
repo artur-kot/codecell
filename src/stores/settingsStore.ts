@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { emit } from "@tauri-apps/api/event";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -29,9 +30,7 @@ const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window !== "undefined") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   return "dark";
 }
@@ -51,6 +50,8 @@ export const useSettingsStore = create<SettingsState>()(
         const resolved = mode === "system" ? getSystemTheme() : mode;
         applyTheme(resolved);
         set({ themeMode: mode, resolvedTheme: resolved });
+        // Broadcast theme change to all windows
+        emit("theme:changed", { mode, resolved });
       },
 
       setEditorSettings: (settings) => {
@@ -67,16 +68,14 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Listen for system theme changes
         if (typeof window !== "undefined") {
-          window
-            .matchMedia("(prefers-color-scheme: dark)")
-            .addEventListener("change", (e) => {
-              const { themeMode } = get();
-              if (themeMode === "system") {
-                const newTheme = e.matches ? "dark" : "light";
-                applyTheme(newTheme);
-                set({ resolvedTheme: newTheme });
-              }
-            });
+          window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+            const { themeMode } = get();
+            if (themeMode === "system") {
+              const newTheme = e.matches ? "dark" : "light";
+              applyTheme(newTheme);
+              set({ resolvedTheme: newTheme });
+            }
+          });
         }
       },
     }),

@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
-import type { Project, ProjectFile, RecentProject, QuickTemplate, TemplateType, WebTemplateConfig } from "@/types";
+import type {
+  Project,
+  ProjectFile,
+  RecentProject,
+  QuickTemplate,
+  CustomTemplate,
+  TemplateType,
+  WebTemplateConfig,
+} from "@/types";
 
 interface ProjectState {
   currentProject: Project | null;
@@ -9,6 +17,7 @@ interface ProjectState {
   quickTemplates: QuickTemplate[];
   isDirty: boolean;
   lastSavedAt: string | null;
+  cleanFilesSnapshot: Map<string, string>; // Snapshot of file contents when last saved/loaded
 
   // Actions
   setCurrentProject: (project: Project | null) => void;
@@ -17,11 +26,19 @@ interface ProjectState {
   loadRecentProjects: () => Promise<void>;
   loadQuickTemplates: () => Promise<void>;
   createProject: (template: TemplateType, config?: WebTemplateConfig) => Project;
-  createProjectWithoutSettingCurrent: (template: TemplateType, config?: WebTemplateConfig) => Project;
+  createProjectFromTemplate: (template: QuickTemplate) => Project;
+  createProjectWithoutSettingCurrent: (
+    template: TemplateType,
+    config?: WebTemplateConfig
+  ) => Project;
   saveProject: () => Promise<boolean>;
   saveProjectAs: () => Promise<boolean>;
   openProject: () => Promise<boolean>;
+  openProjectInNewWindow: () => Promise<boolean>;
+  openProjectFromPath: (path: string) => Promise<boolean>;
   markClean: () => void;
+  saveAsTemplate: (name: string, icon: string) => Promise<boolean>;
+  deleteCustomTemplate: (id: string) => Promise<boolean>;
 }
 
 const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [
@@ -267,16 +284,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   quickTemplates: DEFAULT_QUICK_TEMPLATES,
   isDirty: false,
   lastSavedAt: null,
+  cleanFilesSnapshot: new Map(),
 
-  setCurrentProject: (project) => set({ currentProject: project, isDirty: false }),
+  setCurrentProject: (project) => {
+    const snapshot = new Map<string, string>();
+    if (project) {
+      project.files.forEach((f) => snapshot.set(f.name, f.content));
+    }
+    set({ currentProject: project, isDirty: false, cleanFilesSnapshot: snapshot });
+  },
 
   updateFile: (fileName, content) => {
-    const { currentProject } = get();
+    const { currentProject, cleanFilesSnapshot } = get();
     if (!currentProject) return;
 
     const updatedFiles = currentProject.files.map((f) =>
       f.name === fileName ? { ...f, content } : f
     );
+
+    // Check if content actually differs from clean state
+    const isActuallyDirty = updatedFiles.some((file) => {
+      const cleanContent = cleanFilesSnapshot.get(file.name);
+      return cleanContent !== file.content;
+    });
 
     set({
       currentProject: {
@@ -284,11 +314,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         files: updatedFiles,
         updatedAt: new Date().toISOString(),
       },
-      isDirty: true,
+      isDirty: isActuallyDirty,
     });
   },
 
-  markClean: () => set({ isDirty: false, lastSavedAt: new Date().toISOString() }),
+  markClean: () => {
+    const { currentProject } = get();
+    const snapshot = new Map<string, string>();
+    if (currentProject) {
+      currentProject.files.forEach((f) => snapshot.set(f.name, f.content));
+    }
+    set({ isDirty: false, lastSavedAt: new Date().toISOString(), cleanFilesSnapshot: snapshot });
+  },
 
   saveProject: async () => {
     const { currentProject, saveProjectAs, markClean } = get();
@@ -375,7 +412,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // Ensure savedPath is set
       project.savedPath = path;
 
-      set({ currentProject: project, isDirty: false });
+      // Create clean snapshot for dirty tracking
+      const snapshot = new Map<string, string>();
+      project.files.forEach((f) => snapshot.set(f.name, f.content));
+
+      // Update current window with the project
+      set({ currentProject: project, isDirty: false, cleanFilesSnapshot: snapshot });
 
       // Add to recent projects
       await invoke("add_recent_project", {
@@ -395,12 +437,83 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  openProjectInNewWindow: async () => {
+    try {
+      const path = await open({
+        filters: [{ name: "CodeCell Project", extensions: ["codecell"] }],
+        multiple: false,
+      });
+
+      if (!path || Array.isArray(path)) return false;
+
+      const project = await invoke<Project>("load_project_from_path", { path });
+      project.savedPath = path;
+
+      // Save to temp storage for the new window to load
+      await invoke("save_temp_project", { project });
+
+      // Open new editor window
+      await invoke("open_editor_window", {
+        projectId: project.id,
+        templateType: project.template,
+      });
+
+      // Add to recent projects
+      await invoke("add_recent_project", {
+        project: {
+          id: project.id,
+          name: project.name,
+          template: project.template,
+          path,
+          updatedAt: project.updatedAt,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      console.error("Failed to open project in new window:", error);
+      return false;
+    }
+  },
+
+  openProjectFromPath: async (path: string) => {
+    try {
+      const project = await invoke<Project>("load_project_from_path", { path });
+      project.savedPath = path;
+
+      // Save to temp storage for the new window to load
+      await invoke("save_temp_project", { project });
+
+      // Open new editor window
+      await invoke("open_editor_window", {
+        projectId: project.id,
+        templateType: project.template,
+      });
+
+      // Add to recent projects
+      await invoke("add_recent_project", {
+        project: {
+          id: project.id,
+          name: project.name,
+          template: project.template,
+          path,
+          updatedAt: project.updatedAt,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      console.error("Failed to open project from path:", error);
+      return false;
+    }
+  },
+
   addRecentProject: (project) => {
     set((state) => ({
-      recentProjects: [
-        project,
-        ...state.recentProjects.filter((p) => p.id !== project.id),
-      ].slice(0, 10),
+      recentProjects: [project, ...state.recentProjects.filter((p) => p.id !== project.id)].slice(
+        0,
+        10
+      ),
     }));
   },
 
@@ -415,8 +528,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   loadQuickTemplates: async () => {
-    // TODO: Load custom templates from storage
-    set({ quickTemplates: DEFAULT_QUICK_TEMPLATES });
+    try {
+      const customTemplates = await invoke<CustomTemplate[]>("get_custom_templates");
+
+      // Convert custom templates to QuickTemplate format
+      const customQuickTemplates: QuickTemplate[] = customTemplates.map((ct) => ({
+        id: ct.id,
+        name: ct.name,
+        type: ct.type,
+        config: ct.config,
+        icon: ct.icon,
+        isBuiltIn: false,
+        files: ct.files,
+      }));
+
+      // Merge: custom templates first, then built-in
+      set({ quickTemplates: [...customQuickTemplates, ...DEFAULT_QUICK_TEMPLATES] });
+    } catch (error) {
+      console.error("Failed to load custom templates:", error);
+      set({ quickTemplates: DEFAULT_QUICK_TEMPLATES });
+    }
   },
 
   createProject: (template, config) => {
@@ -429,5 +560,78 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   // Use this when opening a new window from an existing editor to avoid state conflicts.
   createProjectWithoutSettingCurrent: (template, config) => {
     return buildProject(template, config);
+  },
+
+  // Creates a project from a QuickTemplate (handles both built-in and custom)
+  createProjectFromTemplate: (template) => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Use template files if available (custom templates), otherwise generate defaults
+    const files =
+      template.files && template.files.length > 0
+        ? template.files.map((f) => ({ ...f })) // Clone files
+        : generateDefaultFiles(template.type, template.config);
+
+    const project: Project = {
+      id,
+      name: "Untitled",
+      template: template.type,
+      webConfig: template.type === "web" ? template.config : undefined,
+      files,
+      createdAt: now,
+      updatedAt: now,
+      savedPath: null,
+    };
+
+    // Create clean snapshot for dirty tracking
+    const snapshot = new Map<string, string>();
+    files.forEach((f) => snapshot.set(f.name, f.content));
+
+    set({ currentProject: project, isDirty: false, cleanFilesSnapshot: snapshot });
+    return project;
+  },
+
+  saveAsTemplate: async (name, icon) => {
+    const { currentProject, loadQuickTemplates } = get();
+    if (!currentProject) return false;
+
+    try {
+      const customTemplate: CustomTemplate = {
+        id: crypto.randomUUID(),
+        name,
+        type: currentProject.template,
+        config: currentProject.webConfig,
+        icon,
+        files: currentProject.files.map((f) => ({ ...f })),
+        createdAt: new Date().toISOString(),
+      };
+
+      await invoke("save_custom_template", { template: customTemplate });
+
+      // Reload templates to include the new one
+      await loadQuickTemplates();
+
+      return true;
+    } catch (error) {
+      console.error("Failed to save template:", error);
+      return false;
+    }
+  },
+
+  deleteCustomTemplate: async (id) => {
+    const { loadQuickTemplates } = get();
+
+    try {
+      await invoke("delete_custom_template", { id });
+
+      // Reload templates to reflect deletion
+      await loadQuickTemplates();
+
+      return true;
+    } catch (error) {
+      console.error("Failed to delete template:", error);
+      return false;
+    }
   },
 }));

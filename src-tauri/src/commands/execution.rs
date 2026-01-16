@@ -63,9 +63,10 @@ impl RunningProcesses {
 // --- Menu State Updates ---
 
 fn update_stop_menu_state(app: &AppHandle, window_id: &str, enabled: bool) {
-    if let Some(window) = app.get_webview_window(window_id) {
-        let _ = window.emit("execution:state-changed", enabled);
+    // Use emit_to to send event only to the specific window
+    let _ = app.emit_to(window_id, "execution:state-changed", enabled);
 
+    if let Some(window) = app.get_webview_window(window_id) {
         if let Some(menu) = window.menu() {
             if let Ok(items) = menu.items() {
                 for item in items {
@@ -448,15 +449,15 @@ async fn wait_for_process(processes: &RunningProcesses, window_id: &str) -> i32 
 }
 
 fn emit_output(app: &AppHandle, window_id: &str, line: &str, stream: &str) {
-    if let Some(window) = app.get_webview_window(window_id) {
-        let _ = window.emit(
-            "execution:output",
-            ExecutionOutput {
-                line: line.to_string(),
-                stream: stream.to_string(),
-            },
-        );
-    }
+    // Use emit_to to send event only to the specific window
+    let _ = app.emit_to(
+        window_id,
+        "execution:output",
+        ExecutionOutput {
+            line: line.to_string(),
+            stream: stream.to_string(),
+        },
+    );
 }
 
 fn emit_completion(
@@ -467,17 +468,17 @@ fn emit_completion(
     exit_code: i32,
     duration_ms: u64,
 ) {
-    if let Some(window) = app.get_webview_window(window_id) {
-        let _ = window.emit(
-            "execution:completed",
-            ExecutionResult {
-                stdout: stdout.to_string(),
-                stderr: stderr.to_string(),
-                exit_code,
-                duration_ms,
-            },
-        );
-    }
+    // Use emit_to to send event only to the specific window
+    let _ = app.emit_to(
+        window_id,
+        "execution:completed",
+        ExecutionResult {
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+            exit_code,
+            duration_ms,
+        },
+    );
 }
 
 // --- Utilities ---

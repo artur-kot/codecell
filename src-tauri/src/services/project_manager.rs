@@ -1,4 +1,4 @@
-use crate::models::{Project, RecentProject};
+use crate::models::{CustomTemplate, Project, RecentProject};
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -27,6 +27,7 @@ impl ProjectManager {
     pub fn init(&self) -> Result<(), ProjectError> {
         fs::create_dir_all(&self.temp_dir)?;
         fs::create_dir_all(self.data_dir.join("projects"))?;
+        fs::create_dir_all(self.data_dir.join("templates"))?;
         Ok(())
     }
 
@@ -129,6 +130,54 @@ impl ProjectManager {
             }
         }
 
+        Ok(())
+    }
+
+    // Custom template methods
+
+    pub fn save_custom_template(&self, template: &CustomTemplate) -> Result<(), ProjectError> {
+        let templates_dir = self.data_dir.join("templates");
+        fs::create_dir_all(&templates_dir)?;
+
+        let template_path = templates_dir.join(format!("{}.json", template.id));
+        let template_json = serde_json::to_string_pretty(template)?;
+        fs::write(template_path, template_json)?;
+
+        Ok(())
+    }
+
+    pub fn get_custom_templates(&self) -> Result<Vec<CustomTemplate>, ProjectError> {
+        let templates_dir = self.data_dir.join("templates");
+        if !templates_dir.exists() {
+            return Ok(vec![]);
+        }
+
+        let mut templates = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&templates_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "json") {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(template) = serde_json::from_str::<CustomTemplate>(&content) {
+                            templates.push(template);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by creation date (newest first)
+        templates.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(templates)
+    }
+
+    pub fn delete_custom_template(&self, id: &str) -> Result<(), ProjectError> {
+        let template_path = self.data_dir.join("templates").join(format!("{}.json", id));
+        if template_path.exists() {
+            fs::remove_file(template_path)?;
+        }
         Ok(())
     }
 }

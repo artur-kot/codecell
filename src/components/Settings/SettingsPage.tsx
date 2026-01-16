@@ -1,25 +1,27 @@
+import { Settings as SettingsIcon } from "lucide-react";
+import { TitleBar } from "@/components/common";
 import { SettingsContent } from "./SettingsContent";
+import { useWindowState } from "@/hooks";
 
 export function SettingsPage() {
-  return (
-    <div className="h-screen w-screen overflow-hidden bg-base">
-      {/* Header with drag region */}
-      <div
-        className="flex items-center justify-between border-b border-border px-6 py-4"
-        data-tauri-drag-region
-      >
-        <h1 className="font-mono text-lg font-semibold text-text">Settings</h1>
-        <p className="font-mono text-xs text-text-subtle">
-          Settings are saved automatically
-        </p>
-      </div>
+  const { isMaximized } = useWindowState();
 
-      {/* Content */}
-      <div
-        className="overflow-y-auto p-6"
-        style={{ maxHeight: "calc(100vh - 65px)" }}
-      >
-        <SettingsContent />
+  return (
+    <div className={`window-frame ${isMaximized ? "maximized" : ""}`}>
+      <div className="window-container flex flex-col bg-base">
+        <TitleBar
+          title="Settings"
+          icon={<SettingsIcon className="h-4 w-4 text-accent" strokeWidth={1.5} />}
+        >
+          <span className="ml-auto pr-2 font-mono text-xs text-text-subtle">
+            Saved automatically
+          </span>
+        </TitleBar>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <SettingsContent />
+        </div>
       </div>
     </div>
   );

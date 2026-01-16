@@ -21,7 +21,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
-    // File menu
+    // File menu - New from Template submenu
     let new_web = MenuItemBuilder::with_id("new_web", "HTML/CSS/JS").build(app)?;
     let new_react = MenuItemBuilder::with_id("new_react", "React + TypeScript").build(app)?;
     let new_node = MenuItemBuilder::with_id("new_node", "Node.js").build(app)?;
@@ -29,7 +29,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
     let new_rust = MenuItemBuilder::with_id("new_rust", "Rust").build(app)?;
     let new_java = MenuItemBuilder::with_id("new_java", "Java").build(app)?;
 
-    let new_from_template = SubmenuBuilder::new(app, "New from Template")
+    let mut template_builder = SubmenuBuilder::new(app, "New from Template")
         .items(&[
             &new_web,
             &new_react,
@@ -37,8 +37,36 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
             &new_python,
             &new_rust,
             &new_java,
-        ])
-        .build()?;
+        ]);
+
+    // Add custom templates if available
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(manager) = state.project_manager.lock() {
+            if let Ok(custom_templates) = manager.get_custom_templates() {
+                if !custom_templates.is_empty() {
+                    // Add separator and header
+                    template_builder = template_builder.separator();
+                    let my_templates_header =
+                        MenuItemBuilder::with_id("my_templates_header", "MY TEMPLATES")
+                            .enabled(false)
+                            .build(app)?;
+                    template_builder = template_builder.item(&my_templates_header);
+
+                    // Add custom template items
+                    for template in custom_templates.iter() {
+                        let item = MenuItemBuilder::with_id(
+                            &format!("custom_template_{}", template.id),
+                            &template.name,
+                        )
+                        .build(app)?;
+                        template_builder = template_builder.item(&item);
+                    }
+                }
+            }
+        }
+    }
+
+    let new_from_template = template_builder.build()?;
 
     let open = MenuItemBuilder::with_id("open", "Open...")
         .accelerator("CmdOrCtrl+O")
@@ -95,6 +123,9 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
         .accelerator("CmdOrCtrl+Shift+S")
         .build(app)?;
 
+    let save_as_template = MenuItemBuilder::with_id("save_as_template", "Save as Template...")
+        .build(app)?;
+
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_from_template)
         .item(&open)
@@ -102,6 +133,7 @@ pub fn build_menu(app: &tauri::AppHandle, is_web_editor: bool) -> tauri::Result<
         .separator()
         .item(&save)
         .item(&save_as)
+        .item(&save_as_template)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
@@ -238,6 +270,7 @@ pub fn run() {
                     "open" => emit_to_editors("menu:open", None),
                     "save" => emit_to_editors("menu:save", None),
                     "save_as" => emit_to_editors("menu:save-as", None),
+                    "save_as_template" => emit_to_editors("menu:save-as-template", None),
                     "toggle_preview" => emit_to_editors("menu:toggle-preview", None),
                     "toggle_output" => emit_to_editors("menu:toggle-output", None),
                     "run_code" => emit_to_editors("menu:run-code", None),
@@ -283,6 +316,15 @@ pub fn run() {
                                 }
                             }
                         }
+                        // Handle custom template menu items (custom_template_<id>)
+                        else if id.starts_with("custom_template_") {
+                            if let Some(template_id) = id.strip_prefix("custom_template_") {
+                                emit_to_editors(
+                                    "menu:new-custom-template",
+                                    Some(template_id),
+                                );
+                            }
+                        }
                     }
                 }
             });
@@ -305,8 +347,12 @@ pub fn run() {
             commands::load_project_from_path,
             commands::get_recent_projects,
             commands::add_recent_project,
+            commands::save_custom_template,
+            commands::get_custom_templates,
+            commands::delete_custom_template,
             commands::open_editor_window,
             commands::open_settings_window,
+            commands::open_about_window,
             commands::close_editor_window,
             commands::focus_launcher,
             commands::execute_python,
@@ -350,6 +396,9 @@ pub fn run() {
                                 .min_inner_size(700.0, 500.0)
                                 .resizable(true)
                                 .center()
+                                .decorations(false)
+                                .shadow(true)
+                                .transparent(true)
                                 .build()
                         {
                             // Hide menu on launcher

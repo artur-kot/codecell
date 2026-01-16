@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import { Sun, Moon, Monitor, Settings as SettingsIcon } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { PaletteCommand } from "@/components/CommandPalette";
@@ -20,7 +20,7 @@ export function useThemeCommands({ onOpenSettings }: ThemeCommandsOptions): Pale
         id: "theme-light",
         label: "Light Theme",
         description: "Switch to Catppuccin Latte",
-        icon: Sun({ className: "h-4 w-4" }) as ReactNode,
+        icon: <Sun className="h-4 w-4" />,
         action: () => setThemeMode("light"),
         category: "Theme",
       },
@@ -28,7 +28,7 @@ export function useThemeCommands({ onOpenSettings }: ThemeCommandsOptions): Pale
         id: "theme-dark",
         label: "Dark Theme",
         description: "Switch to Catppuccin Mocha",
-        icon: Moon({ className: "h-4 w-4" }) as ReactNode,
+        icon: <Moon className="h-4 w-4" />,
         action: () => setThemeMode("dark"),
         category: "Theme",
       },
@@ -36,7 +36,7 @@ export function useThemeCommands({ onOpenSettings }: ThemeCommandsOptions): Pale
         id: "theme-system",
         label: "System Theme",
         description: "Follow system preference",
-        icon: Monitor({ className: "h-4 w-4" }) as ReactNode,
+        icon: <Monitor className="h-4 w-4" />,
         action: () => setThemeMode("system"),
         category: "Theme",
       },
@@ -45,7 +45,7 @@ export function useThemeCommands({ onOpenSettings }: ThemeCommandsOptions): Pale
         label: "Open Settings",
         description: "Configure editor preferences",
         shortcut: "Ctrl+,",
-        icon: SettingsIcon({ className: "h-4 w-4" }) as ReactNode,
+        icon: <SettingsIcon className="h-4 w-4" />,
         action: onOpenSettings,
         category: "Settings",
       },
